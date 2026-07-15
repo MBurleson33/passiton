@@ -160,6 +160,10 @@ select {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   position: relative; flex-shrink: 0; cursor: default;
   transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
 }
 .card-small { width: 60px; height: 84px; }
 .card-medium { width: 78px; height: 109px; }
@@ -232,4 +236,113 @@ select {
   .card-medium { width: 66px; height: 92px; }
   .card-large { width: 78px; height: 109px; }
   .brand-title { font-size: 2rem; }
+}
+
+/* ---- Card hold-to-zoom ---- */
+.card.pressing {
+  transform: scale(0.97);
+  box-shadow: 0 0 0 3px rgba(224,182,84,0.5);
+}
+.zoom-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+  align-items: center; justify-content: center; z-index: 300; padding: 20px;
+}
+.zoom-overlay.active { display: flex; }
+.zoom-box {
+  width: 100%; max-width: 380px; text-align: center; color: var(--cream);
+}
+.zoom-card-img {
+  width: 100%; max-width: 320px; border-radius: 16px; box-shadow: 0 12px 32px rgba(0,0,0,0.6);
+  border: 3px solid var(--gold); display: block; margin: 0 auto 16px;
+}
+.zoom-card-fallback {
+  width: 100%; max-width: 320px; aspect-ratio: 5/7; border-radius: 16px; margin: 0 auto 16px;
+  border: 3px solid var(--gold); background: var(--cream); color: var(--navy);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 20px;
+}
+.zoom-card-fallback .fallback-suit { font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.8; }
+.zoom-card-fallback .fallback-name { font-size: 1.6rem; font-weight: bold; margin-top: 10px; }
+.zoom-name { font-size: 1.4rem; color: var(--gold-bright); font-weight: bold; margin-bottom: 2px; }
+.zoom-suit-line { color: var(--cream-dim); font-size: 0.85rem; margin-bottom: 4px; }
+.zoom-verse { font-style: italic; color: var(--cream-dim); font-size: 0.85rem; margin: 6px 0 14px; }
+.zoom-ability {
+  text-align: left; background: rgba(255,255,255,0.06); border: 1px solid rgba(201,154,60,0.35);
+  border-radius: 10px; padding: 10px 14px; margin-bottom: 10px;
+}
+.zoom-ability-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--gold-bright); font-weight: bold; margin-bottom: 4px; }
+.zoom-hint { color: var(--cream-dim); font-size: 0.8rem; margin-top: 14px; }
+
+/* ---- Desktop / larger-viewport scale-up ----
+   Everything above is sized for a phone. On a wider screen (tablet
+   landscape and up) there's no reason to keep cards and text
+   phone-small, so this block scales up the same components rather
+   than introducing a separate desktop layout. ---- */
+@media (min-width: 700px) {
+  .card-small { width: 92px; height: 129px; }
+  .card-medium { width: 122px; height: 171px; }
+  .card-large { width: 150px; height: 210px; }
+
+  .num-suit { font-size: 0.85rem; }
+  .num-value { font-size: 2.6rem; }
+
+  .draw-pile-visual, .discard-pile-visual { width: 150px; height: 210px; }
+  .pile-label { font-size: 0.95rem; }
+  .table-area { gap: 60px; margin: 24px 0; }
+
+  .badge { font-size: 0.95rem; padding: 5px 14px; }
+
+  .brand-title { font-size: 3.2rem; }
+  .brand-sub { font-size: 1.1rem; }
+  .home-badge-img { width: 220px; height: 220px; }
+
+  .btn { font-size: 1.1rem; padding: 14px 28px; }
+  .btn-lg { font-size: 1.35rem; padding: 18px 40px; max-width: 420px; }
+
+  .setup-wrap { max-width: 520px; }
+  .field-label { font-size: 1.05rem; }
+  select { font-size: 1.1rem; padding: 10px 18px; }
+  .player-name-row input { font-size: 1.1rem; padding: 10px 16px; }
+  .player-name-row label { font-size: 1.05rem; min-width: 110px; }
+
+  .pass-badge-img { width: 170px; }
+  .pass-name { font-size: 2.7rem; }
+  .pass-sub { font-size: 1.1rem; }
+
+  .game-header { padding: 10px 0 16px; }
+  .turn-badge { font-size: 1rem; }
+  .current-player-tag { font-size: 1.4rem; }
+  .icon-btn { font-size: 1.7rem; }
+
+  .opponents-row { gap: 16px; padding: 14px 0; }
+  .opponent-badge { font-size: 0.95rem; padding: 10px 16px; min-width: 100px; border-radius: 12px; }
+
+  .hint-text { font-size: 1.05rem; margin: 10px 0; }
+
+  .hand-header { font-size: 1.05rem; padding: 0 8px 10px; }
+  .hand-scroll { gap: 14px; padding: 8px 8px 20px; }
+
+  .lock-badge { font-size: 0.95rem; padding: 8px 18px; }
+
+  .modal-box { max-width: 640px; padding: 28px; }
+  .modal-box h3 { font-size: 1.5rem; }
+  .modal-box .verse { font-size: 0.95rem; }
+  .modal-box .btn small { font-size: 0.8rem; max-width: 240px; }
+  .suit-btn { font-size: 1rem; padding: 12px 20px; }
+
+  .zoom-box { max-width: 460px; }
+  .zoom-card-img, .zoom-card-fallback { max-width: 380px; }
+  .zoom-name { font-size: 1.7rem; }
+  .zoom-suit-line, .zoom-verse { font-size: 0.95rem; }
+  .zoom-ability { font-size: 1rem; padding: 12px 16px; }
+
+  .results-stats span { font-size: 2.2rem; }
+  .results-stats label { font-size: 0.9rem; }
+}
+
+@media (min-width: 1100px) {
+  .card-small { width: 108px; height: 151px; }
+  .card-medium { width: 140px; height: 196px; }
+  .card-large { width: 170px; height: 238px; }
+  .draw-pile-visual, .discard-pile-visual { width: 170px; height: 238px; }
+  .brand-title { font-size: 3.8rem; }
 }
