@@ -1,0 +1,226 @@
+/* ============================================================
+   Pass It On — Stylesheet
+   Palette pulled straight from the printed cards: deep navy,
+   vintage cream, gold accent, muted suit colors. Section 20.
+   ============================================================ */
+
+:root {
+  --navy: #0f2a4a;
+  --navy-deep: #0a1d33;
+  --cream: #f3ecd8;
+  --cream-dim: #e6dcbf;
+  --gold: #c99a3c;
+  --gold-bright: #e0b654;
+  --ink: #1c1c1c;
+
+  --faith: #1d4e89;
+  --hope: #a68a1c;
+  --love: #a5253f;
+  --service: #c1622d;
+  --prayer: #5b7a3a;
+  --word: #4b3f9e;
+
+  --radius: 14px;
+  --shadow: 0 8px 24px rgba(0,0,0,0.35);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: "Georgia", "Iowan Old Style", "Palatino Linotype", serif;
+  background: radial-gradient(ellipse at top, var(--navy) 0%, var(--navy-deep) 70%);
+  color: var(--cream);
+  -webkit-tap-highlight-color: transparent;
+}
+
+h1, h2, h3 { font-family: "Georgia", serif; letter-spacing: 0.02em; margin: 0 0 8px; }
+
+.screen {
+  display: none;
+  height: 100vh;
+  height: 100dvh;
+  width: 100%;
+  flex-direction: column;
+  align-items: center;
+  padding: env(safe-area-inset-top, 16px) 16px env(safe-area-inset-bottom, 16px);
+  overflow-y: auto;
+}
+.screen.active { display: flex; }
+
+/* ---- Buttons ---- */
+.btn {
+  font-family: inherit;
+  font-size: 1rem;
+  padding: 12px 22px;
+  margin: 8px 4px;
+  border: 2px solid var(--gold);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--cream);
+  cursor: pointer;
+  transition: transform 0.1s ease, background 0.2s ease;
+}
+.btn:active { transform: scale(0.96); }
+.btn-gold { background: var(--gold); color: var(--navy-deep); font-weight: bold; border-color: var(--gold-bright); }
+.btn-lg { font-size: 1.15rem; padding: 14px 32px; display: block; width: 100%; max-width: 320px; text-align: center; }
+.icon-btn {
+  background: none; border: none; color: var(--cream); font-size: 1.3rem; cursor: pointer; padding: 6px;
+}
+
+/* ---- Home screen ---- */
+.home-wrap { margin: auto; text-align: center; display: flex; flex-direction: column; align-items: center; }
+.home-badge-img { width: 160px; height: 160px; border-radius: 50%; object-fit: cover; box-shadow: var(--shadow); margin-bottom: 20px; }
+.brand-title { font-size: 2.4rem; color: var(--gold-bright); }
+.brand-sub { color: var(--cream-dim); margin-bottom: 24px; font-style: italic; }
+
+/* ---- Setup screen ---- */
+.setup-wrap { width: 100%; max-width: 420px; margin: auto; text-align: center; }
+.field-label { display: block; margin: 12px 0 6px; color: var(--cream-dim); }
+select {
+  font-family: inherit; font-size: 1rem; padding: 8px 14px; border-radius: 8px;
+  border: 1px solid var(--gold); background: var(--cream); color: var(--ink);
+}
+.player-name-row { display: flex; align-items: center; justify-content: space-between; margin: 8px 0; gap: 10px; }
+.player-name-row label { color: var(--cream-dim); min-width: 80px; text-align: left; }
+.player-name-row input {
+  flex: 1; font-family: inherit; font-size: 1rem; padding: 8px 12px; border-radius: 8px;
+  border: 1px solid var(--gold); background: var(--cream); color: var(--ink);
+}
+
+/* ---- Pass screen ---- */
+.pass-wrap { margin: auto; text-align: center; }
+.pass-badge-img { width: 120px; border-radius: 12px; box-shadow: var(--shadow); margin-bottom: 16px; }
+.pass-name { font-size: 2rem; color: var(--gold-bright); margin: 10px 0; font-weight: bold; }
+.pass-sub { color: var(--cream-dim); }
+
+/* ---- Results screen ---- */
+.results-wrap { margin: auto; text-align: center; max-width: 420px; }
+.results-stats { display: flex; justify-content: center; gap: 24px; margin: 20px 0; }
+.results-stats div { display: flex; flex-direction: column; }
+.results-stats span { font-size: 1.8rem; color: var(--gold-bright); font-weight: bold; }
+.results-stats label { color: var(--cream-dim); font-size: 0.8rem; }
+
+/* ---- Game screen ---- */
+.game-header {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  padding: 4px 0 10px; border-bottom: 1px solid rgba(201,154,60,0.3);
+}
+.header-left, .header-right { display: flex; align-items: center; gap: 8px; }
+.turn-badge { color: var(--cream-dim); font-size: 0.85rem; }
+.current-player-tag { font-size: 1.1rem; color: var(--gold-bright); font-weight: bold; }
+
+.lock-badge {
+  display: none; background: rgba(201,154,60,0.15); border: 1px solid var(--gold);
+  color: var(--gold-bright); padding: 6px 14px; border-radius: 999px; font-size: 0.8rem; margin: 8px 0;
+}
+
+.opponents-row {
+  width: 100%; display: flex; gap: 10px; overflow-x: auto; padding: 8px 0; justify-content: center; flex-wrap: wrap;
+}
+.opponent-badge {
+  background: rgba(255,255,255,0.05); border: 1px solid rgba(201,154,60,0.3); border-radius: 10px;
+  padding: 6px 10px; font-size: 0.75rem; text-align: center; min-width: 70px;
+}
+.opponent-badge.current { border-color: var(--gold-bright); box-shadow: 0 0 8px rgba(224,182,84,0.5); }
+.opp-name { font-weight: bold; color: var(--cream); }
+.opp-hand { color: var(--cream-dim); letter-spacing: -3px; }
+.opp-hand span { letter-spacing: normal; margin-left: 4px; }
+.opp-blessings { color: var(--gold-bright); }
+
+.table-area { display: flex; gap: 30px; align-items: flex-start; justify-content: center; margin: 12px 0; flex: 1; }
+.pile-group { text-align: center; }
+.pile-label { color: var(--cream-dim); font-size: 0.75rem; margin-bottom: 4px; }
+.draw-pile-visual { width: 90px; height: 126px; cursor: pointer; border-radius: 8px; overflow: hidden; box-shadow: var(--shadow); transition: transform 0.1s; }
+.draw-pile-visual:active { transform: scale(0.95); }
+.draw-pile-visual img { width: 100%; height: 100%; object-fit: cover; }
+.discard-pile-visual { width: 90px; height: 126px; }
+.active-badges { display: flex; gap: 6px; justify-content: center; margin-top: 6px; }
+.badge {
+  display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: bold;
+  background: #555; color: #fff;
+}
+.badge-number { background: var(--gold); color: var(--navy-deep); }
+
+.hint-text { color: var(--cream-dim); font-size: 0.85rem; text-align: center; margin: 4px 0; min-height: 1.2em; }
+
+/* ---- Cards ---- */
+.card {
+  border-radius: 8px;
+  background-color: var(--cream);
+  background-size: cover;
+  background-position: center;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.4);
+  border: 2px solid transparent;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  position: relative; flex-shrink: 0; cursor: default;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+}
+.card-small { width: 60px; height: 84px; }
+.card-medium { width: 78px; height: 109px; }
+.card-large { width: 90px; height: 126px; }
+.card.legal { border-color: var(--gold-bright); box-shadow: 0 0 12px rgba(224,182,84,0.6); cursor: pointer; }
+.card.legal:active { transform: translateY(-6px); }
+.card.selectable { cursor: pointer; border-color: rgba(255,255,255,0.4); }
+.card.selectable:hover { border-color: var(--gold-bright); }
+.card.chosen { border-color: var(--gold-bright); box-shadow: 0 0 12px rgba(224,182,84,0.8); transform: translateY(-4px); }
+.card.face-down { background-color: var(--navy); }
+.card.has-art { background-color: #000; }
+
+.num-suit { font-size: 0.65rem; font-weight: bold; text-transform: uppercase; letter-spacing: 0.05em; }
+.num-value { font-size: 1.8rem; font-weight: bold; }
+
+.hand-footer { width: 100%; border-top: 1px solid rgba(201,154,60,0.3); padding-top: 8px; }
+.hand-header { display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--cream-dim); padding: 0 4px 6px; }
+.my-blessings { color: var(--gold-bright); font-weight: bold; }
+.hand-scroll { display: flex; gap: 8px; overflow-x: auto; padding: 4px 4px 12px; }
+
+.game-log {
+  display: none; position: fixed; bottom: 0; left: 0; right: 0; max-height: 40vh; overflow-y: auto;
+  background: rgba(10,20,35,0.97); border-top: 1px solid var(--gold); padding: 10px 14px; font-size: 0.8rem; color: var(--cream-dim);
+}
+.game-log.open { display: block; }
+.game-log div { padding: 3px 0; border-bottom: 1px dashed rgba(255,255,255,0.08); }
+
+/* ---- Modal ---- */
+.modal-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75);
+  align-items: center; justify-content: center; z-index: 100; padding: 16px;
+}
+.modal-overlay.active { display: flex; }
+.modal-box {
+  background: var(--cream); color: var(--ink); border-radius: var(--radius); padding: 20px;
+  max-width: 460px; width: 100%; max-height: 85vh; overflow-y: auto; box-shadow: var(--shadow);
+  border: 3px solid var(--gold);
+}
+.modal-box h3 { color: var(--navy); }
+.modal-box .verse { font-style: italic; color: #555; font-size: 0.85rem; margin-bottom: 12px; }
+.reveal-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; justify-content: center; }
+.choice-row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-top: 14px; }
+.modal-box .btn { color: var(--navy); border-color: var(--navy); }
+.modal-box .btn small { display: block; font-weight: normal; font-size: 0.72rem; margin-top: 4px; max-width: 180px; }
+.suit-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 12px; }
+.suit-btn {
+  border: none; border-radius: 8px; color: #fff; font-family: inherit; font-weight: bold;
+  padding: 10px 16px; cursor: pointer; font-size: 0.9rem;
+}
+.suit-btn:active { transform: scale(0.95); }
+
+/* Suit-tinted card borders for number cards rendered from data */
+.card.suit-faith { border-color: var(--faith); }
+.card.suit-hope { border-color: var(--hope); }
+.card.suit-love { border-color: var(--love); }
+.card.suit-service { border-color: var(--service); }
+.card.suit-prayer { border-color: var(--prayer); }
+.card.suit-word { border-color: var(--word); }
+
+@media (max-width: 400px) {
+  .card-medium { width: 66px; height: 92px; }
+  .card-large { width: 78px; height: 109px; }
+  .brand-title { font-size: 2rem; }
+}
