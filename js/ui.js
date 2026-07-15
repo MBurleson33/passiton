@@ -37,7 +37,6 @@ el("#start-game-btn").addEventListener("click", () => {
   const names = inputs.map((inp, i) => inp.value.trim() || `Player ${i + 1}`);
   GAME = createGameState(names);
   persist();
-  showScreen("pass-screen");
   renderPassScreen();
 });
 
@@ -45,7 +44,6 @@ el("#resume-game-btn").addEventListener("click", () => {
   const saved = loadSave();
   if (saved) {
     GAME = saved;
-    showScreen("pass-screen");
     renderPassScreen();
   }
 });
@@ -94,23 +92,21 @@ el("#play-again-btn").addEventListener("click", () => {
   initSetupScreen();
 });
 
-// ---- Pass-and-play privacy screen (Section 17) -----------------
+// ---- Turn advance / render ---------------------------------------
+// Originally this showed a "pass the device" privacy screen between
+// turns (Section 17 of the brief). Matt asked to drop that and stay
+// on the main game screen continuously, so this now just re-renders
+// it for whoever the new current player is — except when the game
+// has ended, when it still routes to the results screen.
 function renderPassScreen() {
   if (GAME.status === "finished") {
     renderResultsScreen();
     showScreen("results-screen");
     return;
   }
-  const p = currentPlayer(GAME);
-  el("#pass-to-name").textContent = p.name;
-  el("#pass-blessing-count").textContent = p.blessings;
-  showScreen("pass-screen");
-}
-
-el("#view-hand-btn").addEventListener("click", () => {
   showScreen("game-screen");
   renderGameScreen();
-});
+}
 
 // ---- Main game screen ------------------------------------------
 function renderGameScreen() {
@@ -225,6 +221,11 @@ function renderCard(card, opts = {}) {
 const LONG_PRESS_MS = 420;
 const MOVE_CANCEL_PX = 12;
 
+// Only real mouse-driven, hover-capable devices get the hover
+// tooltip — this avoids touch browsers that simulate a mouseenter
+// on tap from showing (and getting stuck with) a tooltip.
+const DESKTOP_HOVER = !!(window.matchMedia && window.matchMedia("(hover: hover) and (pointer: fine)").matches);
+
 function attachHoldToZoom(wrap, card, opts) {
   if (opts.noZoom) return;
   let timer = null;
@@ -242,6 +243,7 @@ function attachHoldToZoom(wrap, card, opts) {
     timer = setTimeout(() => {
       longPressed = true;
       wrap.classList.remove("pressing");
+      hideCardTooltip();
       showCardZoom(card, opts);
     }, LONG_PRESS_MS);
   });
@@ -268,6 +270,50 @@ function attachHoldToZoom(wrap, card, opts) {
       longPressed = false;
     }
   }, true);
+
+  // Desktop-only: hovering an Action or Miracle card shows what it
+  // does without needing to click/hold. Number cards have nothing
+  // worth explaining, so they're skipped.
+  if (DESKTOP_HOVER && !opts.faceDown) {
+    const def = cardDef(card);
+    if (def.type === "action" || def.type === "miracle") {
+      wrap.addEventListener("mouseenter", () => showCardTooltip(def, wrap));
+      wrap.addEventListener("mouseleave", hideCardTooltip);
+    }
+  }
+}
+
+function showCardTooltip(def, anchorEl) {
+  const tip = el("#card-tooltip");
+  let html = `<div class="tt-name">${def.name}</div>`;
+  html += `<div class="tt-suit">${def.type === "action" ? def.suit + " · Action" : "Miracle"}</div>`;
+  if (def.verse) html += `<div class="tt-verse">${def.verse}</div>`;
+  if (def.type === "action") {
+    html += `<div class="tt-ability"><span class="tt-label">Play</span>${def.playText}</div>`;
+    html += `<div class="tt-ability"><span class="tt-label">Blessing (spend ${def.blessingCost})</span>${def.blessingText}</div>`;
+  } else {
+    html += `<div class="tt-ability"><span class="tt-label">Effect</span>${def.text}</div>`;
+  }
+  tip.innerHTML = html;
+  tip.classList.add("visible");
+  positionTooltip(tip, anchorEl);
+}
+
+function positionTooltip(tip, anchorEl) {
+  const rect = anchorEl.getBoundingClientRect();
+  const tipRect = tip.getBoundingClientRect();
+  let left = rect.left + rect.width / 2 - tipRect.width / 2;
+  left = Math.max(8, Math.min(left, window.innerWidth - tipRect.width - 8));
+
+  let top = rect.top - tipRect.height - 12;
+  if (top < 8) top = rect.bottom + 12; // not enough room above — flip below
+
+  tip.style.left = `${left}px`;
+  tip.style.top = `${top}px`;
+}
+
+function hideCardTooltip() {
+  el("#card-tooltip").classList.remove("visible");
 }
 
 function showCardZoom(card, opts = {}) {
