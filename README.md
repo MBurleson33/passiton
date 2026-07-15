@@ -41,13 +41,7 @@ folder straight into a GitHub Pages repo and it works.
   meant on your table, this is the one piece of logic to revisit
   first — it's isolated in `resolveMiracleEffect()` / `strengthQueue`
   in `js/engine.js`.
-- **Number cards have no art yet** (none were in your upload), so
-  they're rendered from data: suit name + big number, tinted with
-  that suit's color. Drop the real files into `cards/` named like
-  `faith-1.jpg`, `hope-3.jpg`, etc. (see the `SUITS` numbering in
-  `js/cards.js`) and add `artwork: "cards/faith-1.jpg"` to each
-  entry in `buildNumberCards()` — the renderer already checks for an
-  `artwork` field before falling back to the data rendering.
+- **Number card art** now points at your real files (`cards/Faith - 1.jpg` through `cards/Word - 6.jpg`, etc.) — no placeholder rendering needed. If a specific file is ever missing or misnamed, the card falls back to a suit-colored text card automatically rather than showing blank.
 - A few Action-card effects needed a small ruling to be playable at
   all (not spelled out on the cards): if none of Five Stones' or
   Loaves & Fish's revealed cards are legal, the prototype lets you
@@ -68,7 +62,7 @@ js/engine.js      — game rules, no DOM access
 js/ui.js          — rendering + all the effect-resolution modals
 js/app.js         — service worker registration
 manifest.webmanifest, service-worker.js
-cards/            — card artwork (kebab-case filenames, no spaces)
+cards/            — card artwork (filenames match your repo exactly, e.g. "Action - Five Stones.jpg")
 icons/            — generated placeholder app icons (swap for your logo any time)
 ```
 
