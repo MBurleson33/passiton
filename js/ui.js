@@ -25,12 +25,10 @@ function initSetupScreen() {
   for (let i = 0; i < count; i++) {
     const row = document.createElement("div");
     row.className = "player-name-row";
-    row.innerHTML = `<label>Player ${i + 1}</label><input type="text" maxlength="16" placeholder="Player ${i + 1}" value="${defaultNames[i] || ""}" />`;
+    row.innerHTML = `<label>Player ${i + 1}</label><input type="text" maxlength="16" placeholder="Player ${i + 1}" value="" />`;
     list.appendChild(row);
   }
 }
-
-const defaultNames = ["Matt", "Jessica", "Lauren", "Naomi", "Player 5", "Player 6"];
 
 el("#player-count").addEventListener("change", initSetupScreen);
 
@@ -193,6 +191,7 @@ function renderCard(card, opts = {}) {
     wrap.appendChild(artImg("cards/Pass It On - Back.jpg", "", () => {
       wrap.classList.remove("has-art");
     }));
+    attachHoldToZoom(wrap, card, opts);
     return wrap;
   }
   if (def.artwork) {
@@ -214,8 +213,123 @@ function renderCard(card, opts = {}) {
       <div class="num-value" style="color:${SUIT_COLORS[def.suit]}">${def.number}</div>`;
   }
   wrap.title = def.type === "action" ? `${def.name} — ${def.playText}` : def.name;
+  attachHoldToZoom(wrap, card, opts);
   return wrap;
 }
+
+// ---- Hold-to-zoom ---------------------------------------------
+// Press and hold any card (in hand, on the discard pile, or in an
+// effect-resolution modal) to see a larger view with its full
+// rules text. A long press never triggers the card's normal click
+// handler (play / select) — see the capturing "click" guard below.
+const LONG_PRESS_MS = 420;
+const MOVE_CANCEL_PX = 12;
+
+function attachHoldToZoom(wrap, card, opts) {
+  if (opts.noZoom) return;
+  let timer = null;
+  let startX = 0, startY = 0;
+  let longPressed = false;
+
+  const clearTimer = () => { if (timer) { clearTimeout(timer); timer = null; } };
+
+  wrap.addEventListener("pointerdown", e => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    startX = e.clientX; startY = e.clientY;
+    longPressed = false;
+    wrap.classList.add("pressing");
+    clearTimer();
+    timer = setTimeout(() => {
+      longPressed = true;
+      wrap.classList.remove("pressing");
+      showCardZoom(card, opts);
+    }, LONG_PRESS_MS);
+  });
+
+  const cancelPress = () => { clearTimer(); wrap.classList.remove("pressing"); };
+
+  wrap.addEventListener("pointermove", e => {
+    if (!timer) return;
+    if (Math.abs(e.clientX - startX) > MOVE_CANCEL_PX || Math.abs(e.clientY - startY) > MOVE_CANCEL_PX) {
+      cancelPress();
+    }
+  });
+  wrap.addEventListener("pointerup", cancelPress);
+  wrap.addEventListener("pointercancel", cancelPress);
+  wrap.addEventListener("pointerleave", cancelPress);
+  wrap.addEventListener("contextmenu", e => e.preventDefault());
+
+  // Registered first (capturing phase) so it runs before any click
+  // handler the caller attaches afterward, and can block it.
+  wrap.addEventListener("click", e => {
+    if (longPressed) {
+      e.stopImmediatePropagation();
+      e.preventDefault();
+      longPressed = false;
+    }
+  }, true);
+}
+
+function showCardZoom(card, opts = {}) {
+  const def = cardDef(card);
+  const box = el("#zoom-box");
+  box.innerHTML = "";
+  const isBack = !!opts.faceDown;
+  const artSrc = isBack ? "cards/Pass It On - Back.jpg" : def.artwork;
+
+  const fallbackNode = () => {
+    const fb = document.createElement("div");
+    fb.className = "zoom-card-fallback";
+    fb.style.color = isBack ? "var(--navy)" : (def.suit ? SUIT_COLORS[def.suit] : "var(--navy)");
+    fb.innerHTML = `<div class="fallback-suit">${isBack ? "" : (def.suit || def.type)}</div>
+      <div class="fallback-name">${isBack ? "Card Back" : def.name}</div>`;
+    return fb;
+  };
+
+  if (artSrc) {
+    const img = document.createElement("img");
+    img.className = "zoom-card-img";
+    img.src = artSrc;
+    img.alt = isBack ? "" : def.name;
+    img.addEventListener("error", () => img.replaceWith(fallbackNode()));
+    box.appendChild(img);
+  } else {
+    box.appendChild(fallbackNode());
+  }
+
+  if (!isBack) {
+    const info = document.createElement("div");
+    let html = `<div class="zoom-name">${def.name}</div>`;
+    if (def.type === "number") {
+      html += `<div class="zoom-suit-line">${def.suit} · Number ${def.number}</div>`;
+    } else {
+      html += `<div class="zoom-suit-line">${def.type === "action" ? def.suit + " · Action" : "Miracle"}</div>`;
+    }
+    if (def.verse) html += `<div class="zoom-verse">${def.verse}</div>`;
+    if (def.type === "action") {
+      html += `<div class="zoom-ability"><div class="zoom-ability-label">Play</div>${def.playText}</div>`;
+      html += `<div class="zoom-ability"><div class="zoom-ability-label">Blessing (spend ${def.blessingCost})</div>${def.blessingText}</div>`;
+    }
+    if (def.type === "miracle") {
+      html += `<div class="zoom-ability"><div class="zoom-ability-label">Effect</div>${def.text}</div>`;
+    }
+    info.innerHTML = html;
+    box.appendChild(info);
+  }
+
+  const hint = document.createElement("div");
+  hint.className = "zoom-hint";
+  hint.textContent = "Tap anywhere to close";
+  box.appendChild(hint);
+
+  el("#zoom-overlay").classList.add("active");
+}
+
+function closeCardZoom() {
+  el("#zoom-overlay").classList.remove("active");
+}
+
+el("#zoom-overlay").addEventListener("click", closeCardZoom);
 
 function onCardClick(card) {
   const def = cardDef(card);
