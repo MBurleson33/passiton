@@ -40,17 +40,6 @@
   </div>
 </section>
 
-<!-- PASS-AND-PLAY PRIVACY SCREEN -->
-<section id="pass-screen" class="screen">
-  <div class="pass-wrap">
-    <img src="cards/Pass It On - Back.jpg" alt="" class="pass-badge-img" />
-    <h2>Pass the device to</h2>
-    <div class="pass-name" id="pass-to-name">—</div>
-    <p class="pass-sub">Blessings: <span id="pass-blessing-count">0</span></p>
-    <button class="btn btn-gold btn-lg" id="view-hand-btn">View My Hand</button>
-  </div>
-</section>
-
 <!-- MAIN GAME SCREEN -->
 <section id="game-screen" class="screen">
   <header class="game-header">
@@ -114,6 +103,14 @@
     <button class="btn btn-lg" id="home-btn-results">Home</button>
   </div>
 </section>
+
+<!-- DESKTOP HOVER TOOLTIP (Action/Miracle card effects) -->
+<div id="card-tooltip" class="card-tooltip"></div>
+
+<!-- CARD ZOOM OVERLAY (hold-to-view) -->
+<div id="zoom-overlay" class="zoom-overlay">
+  <div class="zoom-box" id="zoom-box"></div>
+</div>
 
 <!-- MODAL OVERLAY (effect resolution) -->
 <div id="modal-overlay" class="modal-overlay">
