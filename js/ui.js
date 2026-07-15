@@ -166,19 +166,47 @@ function renderGameScreen() {
     : "No legal plays — draw a card.";
 }
 
+// Builds an <img> for card art. Unlike a CSS background-image, an
+// <img> fires a real "error" event on a 404 or bad path, so we can
+// fall back to a readable label instead of silently showing a
+// blank black card (see onError callback in renderCard).
+function artImg(src, alt, onError) {
+  const img = document.createElement("img");
+  img.className = "card-art-img";
+  img.src = src;
+  img.alt = alt;
+  img.draggable = false;
+  img.addEventListener("error", () => {
+    img.remove();
+    if (onError) onError();
+  });
+  return img;
+}
+
 function renderCard(card, opts = {}) {
   const def = cardDef(card);
   const wrap = document.createElement("div");
   wrap.className = `card card-${opts.size || "medium"} suit-${(def.suit || "none").toLowerCase()}`;
   if (opts.legal) wrap.classList.add("legal");
   if (opts.faceDown) {
-    wrap.classList.add("face-down");
-    wrap.style.backgroundImage = `url('cards/card-back.jpg')`;
+    wrap.classList.add("face-down", "has-art");
+    wrap.appendChild(artImg("cards/card-back.jpg", "", () => {
+      wrap.classList.remove("has-art");
+    }));
     return wrap;
   }
   if (def.artwork) {
-    wrap.style.backgroundImage = `url('${def.artwork}')`;
     wrap.classList.add("has-art");
+    const fallback = document.createElement("div");
+    fallback.className = "art-fallback-label";
+    fallback.style.color = def.suit ? SUIT_COLORS[def.suit] : "#c99a3c";
+    fallback.innerHTML = `<div class="fallback-suit">${def.suit || def.type}</div><div class="fallback-name">${def.name}</div>`;
+    fallback.style.display = "none";
+    wrap.appendChild(artImg(def.artwork, def.name, () => {
+      wrap.classList.remove("has-art");
+      fallback.style.display = "flex";
+    }));
+    wrap.appendChild(fallback);
   } else {
     // Number card rendered from data
     wrap.style.borderColor = SUIT_COLORS[def.suit];
