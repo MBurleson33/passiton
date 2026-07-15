@@ -94,8 +94,6 @@ select {
 }
 
 /* ---- Pass screen ---- */
-.pass-wrap { margin: auto; text-align: center; }
-.pass-badge-img { width: 120px; border-radius: 12px; box-shadow: var(--shadow); margin-bottom: 16px; }
 .pass-name { font-size: 2rem; color: var(--gold-bright); margin: 10px 0; font-weight: bold; }
 .pass-sub { color: var(--cream-dim); }
 
@@ -168,8 +166,15 @@ select {
 .card-small { width: 60px; height: 84px; }
 .card-medium { width: 78px; height: 109px; }
 .card-large { width: 90px; height: 126px; }
-.card.legal { border-color: var(--gold-bright); box-shadow: 0 0 12px rgba(224,182,84,0.6); cursor: pointer; }
+.card.legal { border-color: var(--gold-bright); box-shadow: 0 0 12px rgba(224,182,84,0.6); cursor: pointer; transform: translateY(-4px); }
 .card.legal:active { transform: translateY(-6px); }
+/* Non-legal cards in your hand are dimmed and desaturated so the
+   playable ones stand out clearly, rather than relying on a subtle
+   gold border alone. */
+#player-hand .card:not(.legal) {
+  opacity: 0.4;
+  filter: grayscale(55%);
+}
 .card.selectable { cursor: pointer; border-color: rgba(255,255,255,0.4); }
 .card.selectable:hover { border-color: var(--gold-bright); }
 .card.chosen { border-color: var(--gold-bright); box-shadow: 0 0 12px rgba(224,182,84,0.8); transform: translateY(-4px); }
@@ -304,7 +309,6 @@ select {
   .player-name-row input { font-size: 1.1rem; padding: 10px 16px; }
   .player-name-row label { font-size: 1.05rem; min-width: 110px; }
 
-  .pass-badge-img { width: 170px; }
   .pass-name { font-size: 2.7rem; }
   .pass-sub { font-size: 1.1rem; }
 
@@ -345,4 +349,33 @@ select {
   .card-large { width: 170px; height: 238px; }
   .draw-pile-visual, .discard-pile-visual { width: 170px; height: 238px; }
   .brand-title { font-size: 3.8rem; }
+}
+
+/* ---- Desktop hover tooltip (Action/Miracle effect text) ---- */
+.card-tooltip {
+  display: none;
+  position: fixed;
+  z-index: 250;
+  max-width: 280px;
+  background: var(--cream);
+  color: var(--ink);
+  border: 2px solid var(--gold);
+  border-radius: 10px;
+  padding: 12px 14px;
+  box-shadow: var(--shadow);
+  pointer-events: none;
+  font-size: 0.85rem;
+  line-height: 1.35;
+}
+.card-tooltip.visible { display: block; }
+.card-tooltip .tt-name { font-weight: bold; color: var(--navy); font-size: 1rem; margin-bottom: 2px; }
+.card-tooltip .tt-suit { color: #666; font-size: 0.75rem; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.04em; }
+.card-tooltip .tt-verse { font-style: italic; color: #666; font-size: 0.78rem; margin-bottom: 8px; }
+.card-tooltip .tt-ability { margin-bottom: 6px; }
+.card-tooltip .tt-ability:last-child { margin-bottom: 0; }
+.card-tooltip .tt-label { font-weight: bold; color: var(--gold); text-transform: uppercase; font-size: 0.68rem; letter-spacing: 0.05em; display: block; margin-bottom: 1px; }
+
+@media (min-width: 700px) {
+  .card-tooltip { max-width: 320px; font-size: 0.92rem; padding: 14px 16px; }
+  .card-tooltip .tt-name { font-size: 1.1rem; }
 }
