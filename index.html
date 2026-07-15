@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>Pass It On</title>
+<meta name="theme-color" content="#0f2a4a" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="icon" href="icons/icon-192.png" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<!-- HOME SCREEN -->
+<section id="home-screen" class="screen active">
+  <div class="home-wrap">
+    <img src="cards/card-back.jpg" alt="" class="home-badge-img" />
+    <h1 class="brand-title">Pass It On</h1>
+    <p class="brand-sub">A Bible-story card game</p>
+    <button class="btn btn-gold btn-lg" id="new-game-btn">New Game</button>
+    <button class="btn btn-lg" id="resume-game-btn" style="display:none">Resume Game</button>
+  </div>
+</section>
+
+<!-- SETUP SCREEN -->
+<section id="setup-screen" class="screen">
+  <div class="setup-wrap">
+    <h2>Game Setup</h2>
+    <label class="field-label">Number of players</label>
+    <select id="player-count">
+      <option value="2">2</option>
+      <option value="3">3</option>
+      <option value="4" selected>4</option>
+      <option value="5">5</option>
+      <option value="6">6</option>
+    </select>
+    <div id="player-name-list"></div>
+    <button class="btn btn-gold btn-lg" id="start-game-btn">Deal the Cards</button>
+  </div>
+</section>
+
+<!-- PASS-AND-PLAY PRIVACY SCREEN -->
+<section id="pass-screen" class="screen">
+  <div class="pass-wrap">
+    <img src="cards/card-back.jpg" alt="" class="pass-badge-img" />
+    <h2>Pass the device to</h2>
+    <div class="pass-name" id="pass-to-name">—</div>
+    <p class="pass-sub">Blessings: <span id="pass-blessing-count">0</span></p>
+    <button class="btn btn-gold btn-lg" id="view-hand-btn">View My Hand</button>
+  </div>
+</section>
+
+<!-- MAIN GAME SCREEN -->
+<section id="game-screen" class="screen">
+  <header class="game-header">
+    <div class="header-left">
+      <button class="icon-btn" id="quit-to-home-btn" title="Quit to home">⌂</button>
+      <span class="turn-badge">Turn <span id="turn-count">1</span></span>
+    </div>
+    <div class="header-center">
+      <span class="current-player-tag">🎴 <span id="current-player-name"></span></span>
+    </div>
+    <div class="header-right">
+      <button class="icon-btn" id="toggle-log-btn" title="Game log">📜</button>
+    </div>
+  </header>
+
+  <div id="action-lock-badge" class="lock-badge"></div>
+
+  <div class="opponents-row" id="opponents-row"></div>
+
+  <div class="table-area">
+    <div class="pile-group">
+      <div class="pile-label">Draw (<span id="draw-pile-count">0</span>)</div>
+      <div class="draw-pile-visual" id="draw-btn" title="Draw a card">
+        <img src="cards/card-back.jpg" alt="Draw pile" />
+      </div>
+    </div>
+    <div class="pile-group">
+      <div class="pile-label">Discard</div>
+      <div id="discard-pile" class="discard-pile-visual"></div>
+      <div class="active-badges">
+        <span id="active-suit-badge" class="badge">—</span>
+        <span id="active-number-badge" class="badge badge-number">—</span>
+      </div>
+    </div>
+  </div>
+
+  <p class="hint-text" id="hint-text"></p>
+
+  <footer class="hand-footer">
+    <div class="hand-header">
+      <span>Your hand</span>
+      <span class="my-blessings">✨ <span id="my-blessings">0</span> Blessings</span>
+    </div>
+    <div class="hand-scroll" id="player-hand"></div>
+  </footer>
+
+  <div id="game-log" class="game-log"></div>
+</section>
+
+<!-- RESULTS SCREEN -->
+<section id="results-screen" class="screen">
+  <div class="results-wrap">
+    <h2>🎉 We have a winner!</h2>
+    <div class="pass-name" id="winner-name">—</div>
+    <div class="results-stats">
+      <div><span id="result-turns">0</span><label>Turns played</label></div>
+      <div><span id="result-blessings">0</span><label>Blessings collected</label></div>
+      <div><span id="result-miracles">0</span><label>Miracles played</label></div>
+    </div>
+    <button class="btn btn-gold btn-lg" id="play-again-btn">Play Again</button>
+    <button class="btn btn-lg" id="home-btn-results">Home</button>
+  </div>
+</section>
+
+<!-- MODAL OVERLAY (effect resolution) -->
+<div id="modal-overlay" class="modal-overlay">
+  <div class="modal-box" id="modal-body"></div>
+</div>
+
+<script src="js/cards.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
