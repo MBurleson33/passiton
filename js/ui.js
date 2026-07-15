@@ -190,7 +190,7 @@ function renderCard(card, opts = {}) {
   if (opts.legal) wrap.classList.add("legal");
   if (opts.faceDown) {
     wrap.classList.add("face-down", "has-art");
-    wrap.appendChild(artImg("cards/card-back.jpg", "", () => {
+    wrap.appendChild(artImg("cards/Pass It On - Back.jpg", "", () => {
       wrap.classList.remove("has-art");
     }));
     return wrap;
