@@ -26,10 +26,9 @@ const SUIT_COLORS = {
 };
 
 // ---- Number Cards (Section 2) -------------------------------
-// No art was supplied for these 36, so the digital prototype
-// renders them from data (suit color + numeral) instead of an
-// image file. Swap in real art later by adding an `artwork` path
-// to each entry — the renderer already checks for one.
+// Artwork paths match the exact filenames in your cards/ folder
+// (e.g. "cards/Faith - 1.jpg"). If a file is ever missing, the
+// renderer falls back to a suit-colored text card automatically.
 function buildNumberCards() {
   const cards = [];
   for (const suit of SUITS) {
@@ -41,7 +40,7 @@ function buildNumberCards() {
         suit,
         number: n,
         copies: DECK_CONFIG.numberCardCopies,
-        artwork: null
+        artwork: `cards/${suit} - ${n}.jpg`
       });
     }
   }
@@ -61,7 +60,7 @@ const ACTION_CARDS = [
     number: null,
     copies: DECK_CONFIG.actionCardCopies,
     verse: "1 Samuel 17:40-50",
-    artwork: "cards/action-five-stones.jpg",
+    artwork: "cards/Action - Five Stones.jpg",
     playText: "Reveal the top 5 cards from the draw pile. Put 1 into your hand. Return the other 4 in any order.",
     blessingText: "Reveal the top 5 cards from the draw pile. Play 1 immediately, if able. Return the other 4 in any order.",
     blessingCost: 1,
@@ -76,7 +75,7 @@ const ACTION_CARDS = [
     number: null,
     copies: DECK_CONFIG.actionCardCopies,
     verse: "John 4:1-26",
-    artwork: "cards/action-living-water.jpg",
+    artwork: "cards/Action - Living Water.jpg",
     playText: "Place 1 card from your hand on the bottom of the draw pile.",
     blessingText: "Place 1 card from your hand on the bottom of the draw pile. Play 1 additional card from your hand.",
     blessingCost: 1,
@@ -91,7 +90,7 @@ const ACTION_CARDS = [
     number: null,
     copies: DECK_CONFIG.actionCardCopies,
     verse: "Matthew 14:13-21",
-    artwork: "cards/action-loaves-and-fish.jpg",
+    artwork: "cards/Action - Loaves and Fish.jpg",
     playText: "Reveal the top card of the draw pile. If able, play it immediately. Otherwise, return it to the draw pile.",
     blessingText: "Reveal the top 3 cards from the draw pile. Play 1 if able, return the rest to the draw pile.",
     blessingCost: 1,
@@ -106,7 +105,7 @@ const ACTION_CARDS = [
     number: null,
     copies: DECK_CONFIG.actionCardCopies,
     verse: "Matthew 13:31-32",
-    artwork: "cards/action-mustard-seed.jpg",
+    artwork: "cards/Action - Mustard Seed.jpg",
     playText: "Play 1 additional card from your hand.",
     blessingText: "Play 1 additional card from your hand. If both cards are the same suit, gain 1 Blessing.",
     blessingCost: 1,
@@ -121,7 +120,7 @@ const ACTION_CARDS = [
     number: null,
     copies: DECK_CONFIG.actionCardCopies,
     verse: "Jonah 1-2",
-    artwork: "cards/action-the-big-fish.jpg",
+    artwork: "cards/Action - The Big Fish.jpg",
     playText: "Choose the active suit.",
     blessingText: "Choose the active suit. Exchange 1 card from your hand with the top card of the draw pile.",
     blessingCost: 1,
@@ -136,7 +135,7 @@ const ACTION_CARDS = [
     number: null,
     copies: DECK_CONFIG.actionCardCopies,
     verse: "Mark 4:35-41",
-    artwork: "cards/action-the-big-storm.jpg",
+    artwork: "cards/Action - The Big Storm.jpg",
     playText: "Choose yourself or another player. Chosen player may discard 1 card.",
     blessingText: "Choose yourself and one other player. You each discard 1 card. Choose the active suit.",
     blessingCost: 1,
@@ -151,7 +150,7 @@ const ACTION_CARDS = [
     number: null,
     copies: DECK_CONFIG.actionCardCopies,
     verse: "Matthew 28:1-10",
-    artwork: "cards/action-the-empty-tomb.jpg",
+    artwork: "cards/Action - The Empty Tomb.jpg",
     playText: "Choose any 1 card from the discard pile and put it into your hand.",
     blessingText: "Choose any 1 card from the discard pile. Play it regardless of suit.",
     blessingCost: 2,
@@ -166,7 +165,7 @@ const ACTION_CARDS = [
     number: null,
     copies: DECK_CONFIG.actionCardCopies,
     verse: "Luke 10:25-37",
-    artwork: "cards/action-the-good-samaritan.jpg",
+    artwork: "cards/Action - The Good Samaritan.jpg",
     playText: "Give 1 card from your hand to another player. Then play 1 additional card.",
     blessingText: "Give 1 card from your hand to another player. Then you and that player may each play 1 card if able.",
     blessingCost: 1,
@@ -181,7 +180,7 @@ const ACTION_CARDS = [
     number: null,
     copies: DECK_CONFIG.actionCardCopies,
     verse: "John 10:11-18",
-    artwork: "cards/action-the-good-shepherd.jpg",
+    artwork: "cards/Action - The Good Shepherd.jpg",
     playText: "Take the top card from the discard pile and put it into your hand.",
     blessingText: "Look at the top 3 cards of the discard pile. Put 1 into your hand, return the rest in any order.",
     blessingCost: 1,
@@ -196,7 +195,7 @@ const ACTION_CARDS = [
     number: null,
     copies: DECK_CONFIG.actionCardCopies,
     verse: "Luke 19:1-10",
-    artwork: "cards/action-tree-climber.jpg",
+    artwork: "cards/Action - Tree Climber.jpg",
     playText: "Look at the top 3 cards of the draw pile. Return them in any order.",
     blessingText: "Look at the top 5 cards of the draw pile. Return them in any order.",
     blessingCost: 1,
@@ -211,7 +210,7 @@ const ACTION_CARDS = [
     number: null,
     copies: DECK_CONFIG.actionCardCopies,
     verse: "Mark 12:41-44",
-    artwork: "cards/action-two-coins.jpg",
+    artwork: "cards/Action - Two Coins.jpg",
     playText: "Give 1 card from your hand to another player. Gain 1 Blessing.",
     blessingText: "Give 1 card from your hand to another player. Choose the active suit.",
     blessingCost: 1,
@@ -226,7 +225,7 @@ const ACTION_CARDS = [
     number: null,
     copies: DECK_CONFIG.actionCardCopies,
     verse: "Matthew 14:22-33",
-    artwork: "cards/action-walk-on-water.jpg",
+    artwork: "cards/Action - Walk on Water.jpg",
     playText: "Play any 1 card from your hand regardless of suit or number.",
     blessingText: "Play any 1 card from your hand regardless of suit or number. Then gain 1 Blessing.",
     blessingCost: 1,
@@ -254,7 +253,7 @@ const MIRACLE_CARDS = [
     number: null,
     copies: DECK_CONFIG.miracleCardCopies,
     verse: "Psalm 119:105",
-    artwork: "cards/miracle-wisdom.jpg",
+    artwork: "cards/Miracle - Wisdom.jpg",
     text: "Play on any card. Choose the active suit.",
     timing: "on_your_turn",
     effect: { type: "choose_suit" }
@@ -267,7 +266,7 @@ const MIRACLE_CARDS = [
     number: null,
     copies: DECK_CONFIG.miracleCardCopies,
     verse: "2 Corinthians 12:9",
-    artwork: "cards/miracle-redeemed.jpg",
+    artwork: "cards/Miracle - Redeemed.jpg",
     text: "Play on any card. Return 1 card from the discard pile to your hand.",
     timing: "on_your_turn",
     effect: { type: "return_discard_to_hand", count: 1 }
@@ -280,7 +279,7 @@ const MIRACLE_CARDS = [
     number: null,
     copies: DECK_CONFIG.miracleCardCopies,
     verse: "John 14:27",
-    artwork: "cards/miracle-peace.jpg",
+    artwork: "cards/Miracle - Peace.jpg",
     text: "Play on any card. No one may play Action cards until your next turn.",
     timing: "on_your_turn",
     effect: { type: "lock_action_cards" }
@@ -293,7 +292,7 @@ const MIRACLE_CARDS = [
     number: null,
     copies: DECK_CONFIG.miracleCardCopies,
     verse: "Psalm 23:5",
-    artwork: "cards/miracle-overflow.jpg",
+    artwork: "cards/Miracle - Overflow.jpg",
     text: "Play on any card. Discard any number of cards from your hand. Draw that many cards.",
     timing: "on_your_turn",
     effect: { type: "overflow" }
@@ -306,7 +305,7 @@ const MIRACLE_CARDS = [
     number: null,
     copies: DECK_CONFIG.miracleCardCopies,
     verse: "Psalm 5:12",
-    artwork: "cards/miracle-favor.jpg",
+    artwork: "cards/Miracle - Favor.jpg",
     text: "Play on any card. Gain 1 Blessing.",
     timing: "any_time",
     effect: { type: "gain_blessing", amount: 1 }
@@ -319,7 +318,7 @@ const MIRACLE_CARDS = [
     number: null,
     copies: DECK_CONFIG.miracleCardCopies,
     verse: "Isaiah 40:31",
-    artwork: "cards/miracle-strength.jpg",
+    artwork: "cards/Miracle - Strength.jpg",
     text: "Play on any card, at any time. Continue play after you.",
     timing: "any_time",
     effect: { type: "take_next_turn" }
