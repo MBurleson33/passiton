@@ -379,3 +379,10 @@ select {
   .card-tooltip { max-width: 320px; font-size: 0.92rem; padding: 14px 16px; }
   .card-tooltip .tt-name { font-size: 1.1rem; }
 }
+
+.free-play-badge {
+  background: rgba(224,182,84,0.18);
+  border-color: var(--gold-bright);
+  color: var(--gold-bright);
+  font-weight: bold;
+}
