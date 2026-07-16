@@ -40,7 +40,7 @@ function createGameState(playerNames) {
     id: `player-${i + 1}`,
     name,
     hand: [],
-    blessings: 0,
+    blessings: 1,
     connected: true
   }));
 
@@ -55,6 +55,7 @@ function createGameState(playerNames) {
     activeSuit: null,
     activeNumber: null,
     actionLock: { active: false, ownerPlayerId: null },
+    freePlayPlayerId: null,
     pendingEffect: null,
     winnerId: null,
     turnCount: 1,
@@ -109,15 +110,25 @@ function findPlayer(state, id) {
 // Single source of truth for whether a card can be played right now.
 // Every UI affordance must route through this — never duplicate the
 // logic elsewhere.
+//
+// Miracle free-play rule: after a Miracle card resolves, the very
+// next player may play ANY card regardless of active suit/number —
+// state.freePlayPlayerId marks who currently holds that grant. It's
+// checked after the Action lock (so Peace's lock still applies even
+// during a free play) but before normal suit/number matching.
 function canPlayCard(card, state, playerId) {
   const def = cardDef(card);
 
-  if (def.type === "miracle") {
-    return checkMiracleTiming(def, state, playerId);
-  }
-
   if (state.actionLock.active && def.type === "action") {
     return false;
+  }
+
+  if (state.freePlayPlayerId === playerId) {
+    return true;
+  }
+
+  if (def.type === "miracle") {
+    return checkMiracleTiming(def, state, playerId);
   }
 
   if (playerId !== currentPlayer(state).id) {
@@ -200,6 +211,18 @@ function checkActionLockExpiry(state, newCurrentPlayerId) {
   }
 }
 
+// Ends the current player's turn and grants the new current player
+// a free play: they may play any card from their hand regardless of
+// active suit/number (still subject to the Action lock). This is
+// how every Miracle card resolves per the free-play rule — if that
+// next player plays another Miracle, this same helper runs again
+// and the grant chains forward to the player after them.
+function endTurnWithFreePlay(state) {
+  advanceTurn(state);
+  state.freePlayPlayerId = currentPlayer(state).id;
+  log(state, `${currentPlayer(state).name} may play any card (Miracle free play).`);
+}
+
 // ---- Win check ------------------------------------------------
 function checkWin(state, playerId) {
   const player = findPlayer(state, playerId);
@@ -222,6 +245,7 @@ function playNumberCard(state, playerId, cardUid) {
   state.discardPile.push(card);
   state.activeSuit = def.suit;
   state.activeNumber = def.number;
+  state.freePlayPlayerId = null;
   log(state, `${player.name} played ${def.name}.`);
 
   if (checkWin(state, playerId)) return { won: true };
@@ -247,6 +271,7 @@ function playActionCard(state, playerId, cardUid, useBlessing) {
   state.discardPile.push(card);
   state.activeSuit = def.suit;
   state.activeNumber = null;
+  state.freePlayPlayerId = null;
 
   if (useBlessing) {
     player.blessings -= def.blessingCost;
@@ -270,6 +295,7 @@ function playMiracleCard(state, playerId, cardUid) {
 
   player.hand.splice(idx, 1);
   state.discardPile.push(card);
+  state.freePlayPlayerId = null; // this player's own free play (if any) is now spent
   log(state, `${player.name} played ${def.name} (Miracle).`);
 
   if (checkWin(state, playerId)) return { won: true };
@@ -362,19 +388,23 @@ function resolveMiracleEffect(state, playerId, effect) {
     case "lock_action_cards":
       state.actionLock = { active: true, ownerPlayerId: playerId };
       log(state, `${player.name} played Peace — no Action cards until their next turn.`);
-      return { done: true, endTurn: false }; // miracles don't consume the turn
+      endTurnWithFreePlay(state);
+      return { done: true };
     case "overflow":
       return { needsInput: "overflow_discard", done: false };
     case "gain_blessing":
       player.blessings += effect.amount;
       log(state, `${player.name} gained ${effect.amount} Blessing from Favor.`);
-      return { done: true, endTurn: false };
+      endTurnWithFreePlay(state);
+      return { done: true };
     case "take_next_turn":
       state.strengthQueue.push(playerId);
       log(state, `${player.name} will continue play next (Strength).`);
-      return { done: true, endTurn: false };
+      endTurnWithFreePlay(state);
+      return { done: true };
     default:
-      return { done: true, endTurn: false };
+      endTurnWithFreePlay(state);
+      return { done: true };
   }
 }
 
