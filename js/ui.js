@@ -124,6 +124,12 @@ function renderGameScreen() {
     el("#action-lock-badge").textContent = `🕊 Peace: no Action cards until ${owner.name}'s next turn`;
   }
 
+  const freePlay = GAME.freePlayPlayerId === p.id;
+  el("#free-play-badge").style.display = freePlay ? "inline-block" : "none";
+  if (freePlay) {
+    el("#free-play-badge").textContent = "✨ Free play — any card in your hand may be played";
+  }
+
   // Discard pile top card
   const top = GAME.discardPile[GAME.discardPile.length - 1];
   el("#discard-pile").innerHTML = "";
@@ -434,6 +440,7 @@ function showActionChoiceModal(def, card) {
 el("#draw-btn").addEventListener("click", () => {
   const p = currentPlayer(GAME);
   const drawn = drawCard(GAME, p.id, 1);
+  GAME.freePlayPlayerId = null; // drawing expires an unused free play
   persist();
   if (drawn.length && canPlayCard(drawn[0], GAME, p.id)) {
     openModal(`
@@ -479,12 +486,6 @@ function handleEffectResult(result, playerId) {
   if (result.won) { persist(); renderPassScreen(); return; }
   if (result.error) { alert(result.error); renderGameScreen(); return; }
   if (!result.needsInput) {
-    if (result.endTurn === false) {
-      // Miracle resolved without consuming the turn
-      persist();
-      renderGameScreen();
-      return;
-    }
     persist();
     renderPassScreen();
     return;
@@ -533,10 +534,26 @@ function endTurnAndClose() {
   renderPassScreen();
 }
 
+// Used to finish a Miracle card's needsInput flow (Wisdom, Redeemed,
+// Overflow) — ends the turn via endTurnWithFreePlay so the free-play
+// grant passes to the next player, per the free-play rule.
+function endMiracleTurnAndClose() {
+  closeModal();
+  endTurnWithFreePlay(GAME);
+  persist();
+  renderPassScreen();
+}
+
+
 // ---- Individual effect modals --------------------------------------
 
 function modalFiveStonesKeep(result, playerId) {
   const player = findPlayer(GAME, playerId);
+  if (result.revealed.length === 0) {
+    log(GAME, `${player.name} played Five Stones but the draw pile was empty.`);
+    endTurnAndClose();
+    return;
+  }
   openModal(`<h3>Five Stones</h3><p>Choose 1 card to keep. The rest return to the draw pile.</p>
     <div class="reveal-row" id="reveal-slot"></div>`);
   const slot = el("#reveal-slot");
@@ -556,6 +573,11 @@ function modalFiveStonesKeep(result, playerId) {
 
 function modalFiveStonesPlay(result, playerId) {
   const player = findPlayer(GAME, playerId);
+  if (result.revealed.length === 0) {
+    log(GAME, `${player.name} played Five Stones (Blessing) but the draw pile was empty.`);
+    endTurnAndClose();
+    return;
+  }
   if (result.playable.length === 0) {
     openModal(`<h3>Five Stones (Blessing)</h3><p>None of the 5 revealed cards can be played. Add one to your hand, or return all five?</p>
       <div class="reveal-row" id="reveal-slot"></div>
@@ -601,6 +623,10 @@ function modalFiveStonesPlay(result, playerId) {
 
 function modalLivingWaterDiscard(result, playerId) {
   const player = findPlayer(GAME, playerId);
+  if (player.hand.length === 0) {
+    endTurnAndClose();
+    return;
+  }
   openModal(`<h3>Living Water</h3><p>Choose 1 card from your hand to place on the bottom of the draw pile.</p>
     <div class="reveal-row" id="hand-slot"></div>`);
   const slot = el("#hand-slot");
@@ -655,8 +681,11 @@ function modalLoavesAndFishChoose(result, playerId) {
 function modalMustardSeedExtra(result, playerId) {
   const player = findPlayer(GAME, playerId);
   const firstSuit = GAME.activeSuit;
+  const anyLegal = player.hand.some(card => canPlayCard(card, GAME, playerId));
   openModal(`<h3>Mustard Seed</h3><p>Play 1 additional card from your hand.</p>
-    <div class="reveal-row" id="hand-slot"></div>`);
+    <div class="reveal-row" id="hand-slot"></div>
+    ${anyLegal ? "" : `<p><em>No card in your hand can legally be played right now.</em></p>
+    <button class="btn" id="mustard-skip">Continue</button>`}`);
   const slot = el("#hand-slot");
   player.hand.forEach(card => {
     const legal = canPlayCard(card, GAME, playerId);
@@ -677,6 +706,9 @@ function modalMustardSeedExtra(result, playerId) {
     }
     slot.appendChild(c);
   });
+  if (!anyLegal) {
+    el("#mustard-skip").addEventListener("click", () => endTurnAndClose());
+  }
 }
 
 function modalBigFish(result, playerId) {
@@ -879,6 +911,11 @@ function promptOptionalPlay(playerId, onDone) {
 
 function modalGoodShepherdChoose(result, playerId) {
   const player = findPlayer(GAME, playerId);
+  if (result.revealed.length === 0) {
+    log(GAME, `${player.name} played The Good Shepherd but there was nothing else in the discard pile.`);
+    endTurnAndClose();
+    return;
+  }
   openModal(`<h3>The Good Shepherd (Blessing)</h3><p>Choose 1 card to put into your hand.</p>
     <div class="reveal-row" id="reveal-slot"></div>`);
   const slot = el("#reveal-slot");
@@ -897,6 +934,11 @@ function modalGoodShepherdChoose(result, playerId) {
 }
 
 function modalTreeClimber(result, playerId) {
+  if (result.revealed.length === 0) {
+    log(GAME, `${findPlayer(GAME, playerId).name} played Tree Climber but the draw pile was empty.`);
+    endTurnAndClose();
+    return;
+  }
   openModal(`<h3>Tree Climber</h3><p>Choose the order to return these cards to the draw pile (tap in the order you want them placed on top).</p>
     <div class="reveal-row" id="reveal-slot"></div>
     <div class="reveal-row" id="chosen-slot"><em>Order chosen:</em></div>
@@ -995,9 +1037,7 @@ function modalChooseSuit(result, playerId) {
       GAME.activeSuit = suit;
       GAME.activeNumber = null;
       log(GAME, `Active suit set to ${suit} (Wisdom).`);
-      closeModal();
-      persist();
-      renderGameScreen(); // Miracles don't consume the turn
+      endMiracleTurnAndClose();
     });
     slot.appendChild(btn);
   });
@@ -1007,9 +1047,7 @@ function modalRedeemedChoose(result, playerId) {
   const player = findPlayer(GAME, playerId);
   const belowTop = GAME.discardPile.slice(0, -1);
   if (belowTop.length === 0) {
-    closeModal();
-    persist();
-    renderGameScreen();
+    endMiracleTurnAndClose();
     return;
   }
   openModal(`<h3>Redeemed</h3><p>Return 1 card from the discard pile to your hand.</p>
@@ -1022,9 +1060,7 @@ function modalRedeemedChoose(result, playerId) {
       GAME.discardPile = GAME.discardPile.filter(d => d.uid !== card.uid);
       player.hand.push(card);
       log(GAME, `${player.name} returned a card from the discard pile to hand (Redeemed).`);
-      closeModal();
-      persist();
-      renderGameScreen();
+      endMiracleTurnAndClose();
     });
     slot.appendChild(c);
   });
@@ -1053,7 +1089,7 @@ function modalOverflow(result, playerId) {
     GAME.discardPile.push(...toDiscard);
     drawCard(GAME, playerId, toDiscard.length);
     log(GAME, `${player.name} discarded ${toDiscard.length} card(s) and drew ${toDiscard.length} (Overflow).`);
-    endTurnAndClose();
+    endMiracleTurnAndClose();
   });
 }
 
