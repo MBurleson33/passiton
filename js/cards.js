@@ -7,11 +7,12 @@
 // ============================================================
 
 // ---- Configuration (Section 3 of the brief) ----------------
-const DECK_CONFIG = {
-  numberCardCopies: 2,
-  actionCardCopies: 2,
-  miracleCardCopies: 2
-};
+// Deck composition now uses a rarity system: every card carries its
+// own `copies` count instead of one shared multiplier per type.
+// createFullDeck() (engine.js) just sums whatever `copies` each card
+// definition declares — change a number here and the deck, odds,
+// and anywhere the app reports deck size all follow automatically.
+const NUMBER_CARD_COPIES = 2; // Number cards remain uniform: 36 unique x2 = 72
 
 const SUITS = ["Faith", "Hope", "Love", "Service", "Prayer", "Word"];
 
@@ -39,7 +40,7 @@ function buildNumberCards() {
         type: "number",
         suit,
         number: n,
-        copies: DECK_CONFIG.numberCardCopies,
+        copies: NUMBER_CARD_COPIES,
         artwork: `cards/${suit} - ${n}.jpg`
       });
     }
@@ -48,9 +49,9 @@ function buildNumberCards() {
 }
 
 // ---- Action Cards (Section 10/11) ----------------------------
-// Text transcribed directly from the printed card art you
-// uploaded. Effect types are consumed by engine.js's effect
-// resolver (see EFFECT HANDLERS at the bottom of engine.js).
+// Text transcribed directly from the printed card art. Rarity
+// (`copies`) and several mechanics were updated per the July 2026
+// rules revision — see README for a full list of what changed.
 const ACTION_CARDS = [
   {
     id: "five-stones",
@@ -58,11 +59,11 @@ const ACTION_CARDS = [
     type: "action",
     suit: "Faith",
     number: null,
-    copies: DECK_CONFIG.actionCardCopies,
+    copies: 2,
     verse: "1 Samuel 17:40-50",
     artwork: "cards/Action - Five Stones.jpg",
-    playText: "Reveal the top 5 cards from the draw pile. Put 1 into your hand. Return the other 4 in any order.",
-    blessingText: "Reveal the top 5 cards from the draw pile. Play 1 immediately, if able. Return the other 4 in any order.",
+    playText: "Look at the top 5 cards from the draw pile. Put 1 into your hand. Return 4 in any order.",
+    blessingText: "Look at the top 5 cards from the draw pile. Play 1 if able. Return 4 in any order.",
     blessingCost: 1,
     effect: { type: "five_stones", count: 5, mode: "keep" },
     blessingEffect: { type: "five_stones", count: 5, mode: "play" }
@@ -73,12 +74,12 @@ const ACTION_CARDS = [
     type: "action",
     suit: "Prayer",
     number: null,
-    copies: DECK_CONFIG.actionCardCopies,
+    copies: 2,
     verse: "John 4:1-26",
     artwork: "cards/Action - Living Water.jpg",
     playText: "Place 1 card from your hand on the bottom of the draw pile.",
     blessingText: "Place 1 card from your hand on the bottom of the draw pile. Play 1 additional card from your hand.",
-    blessingCost: 1,
+    blessingCost: 2,
     effect: { type: "living_water", extraPlay: false },
     blessingEffect: { type: "living_water", extraPlay: true }
   },
@@ -88,7 +89,7 @@ const ACTION_CARDS = [
     type: "action",
     suit: "Service",
     number: null,
-    copies: DECK_CONFIG.actionCardCopies,
+    copies: 2,
     verse: "Matthew 14:13-21",
     artwork: "cards/Action - Loaves and Fish.jpg",
     playText: "Reveal the top card of the draw pile. If able, play it immediately. Otherwise, return it to the draw pile.",
@@ -103,7 +104,7 @@ const ACTION_CARDS = [
     type: "action",
     suit: "Faith",
     number: null,
-    copies: DECK_CONFIG.actionCardCopies,
+    copies: 3,
     verse: "Matthew 13:31-32",
     artwork: "cards/Action - Mustard Seed.jpg",
     playText: "Play 1 additional card from your hand.",
@@ -118,7 +119,7 @@ const ACTION_CARDS = [
     type: "action",
     suit: "Hope",
     number: null,
-    copies: DECK_CONFIG.actionCardCopies,
+    copies: 2,
     verse: "Jonah 1-2",
     artwork: "cards/Action - The Big Fish.jpg",
     playText: "Choose the active suit.",
@@ -133,12 +134,12 @@ const ACTION_CARDS = [
     type: "action",
     suit: "Prayer",
     number: null,
-    copies: DECK_CONFIG.actionCardCopies,
+    copies: 1,
     verse: "Mark 4:35-41",
     artwork: "cards/Action - The Big Storm.jpg",
-    playText: "Choose yourself or another player. Chosen player may discard 1 card.",
-    blessingText: "Choose yourself and one other player. You each discard 1 card. Choose the active suit.",
-    blessingCost: 1,
+    playText: "Choose another player. The chosen player may discard 1 card.",
+    blessingText: "Choose yourself and one other player. You may each discard 1 card.",
+    blessingCost: 2,
     effect: { type: "big_storm", mode: "single" },
     blessingEffect: { type: "big_storm", mode: "double" }
   },
@@ -148,12 +149,12 @@ const ACTION_CARDS = [
     type: "action",
     suit: "Hope",
     number: null,
-    copies: DECK_CONFIG.actionCardCopies,
+    copies: 1,
     verse: "Matthew 28:1-10",
     artwork: "cards/Action - The Empty Tomb.jpg",
     playText: "Choose any 1 card from the discard pile and put it into your hand.",
     blessingText: "Choose any 1 card from the discard pile. Play it regardless of suit.",
-    blessingCost: 2,
+    blessingCost: 3,
     effect: { type: "empty_tomb", mode: "take" },
     blessingEffect: { type: "empty_tomb", mode: "play" }
   },
@@ -163,11 +164,11 @@ const ACTION_CARDS = [
     type: "action",
     suit: "Service",
     number: null,
-    copies: DECK_CONFIG.actionCardCopies,
+    copies: 3,
     verse: "Luke 10:25-37",
     artwork: "cards/Action - The Good Samaritan.jpg",
-    playText: "Give 1 card from your hand to another player. Then play 1 additional card.",
-    blessingText: "Give 1 card from your hand to another player. Then you and that player may each play 1 card if able.",
+    playText: "Give 1 card from your hand to another player.",
+    blessingText: "Give 1 card from your hand to another player. Then you may play 1 additional card if able.",
     blessingCost: 1,
     effect: { type: "good_samaritan", mode: "normal" },
     blessingEffect: { type: "good_samaritan", mode: "blessing" }
@@ -178,7 +179,7 @@ const ACTION_CARDS = [
     type: "action",
     suit: "Word",
     number: null,
-    copies: DECK_CONFIG.actionCardCopies,
+    copies: 2,
     verse: "John 10:11-18",
     artwork: "cards/Action - The Good Shepherd.jpg",
     playText: "Take the top card from the discard pile and put it into your hand.",
@@ -193,7 +194,7 @@ const ACTION_CARDS = [
     type: "action",
     suit: "Hope",
     number: null,
-    copies: DECK_CONFIG.actionCardCopies,
+    copies: 2,
     verse: "Luke 19:1-10",
     artwork: "cards/Action - Tree Climber.jpg",
     playText: "Look at the top 3 cards of the draw pile. Return them in any order.",
@@ -208,7 +209,7 @@ const ACTION_CARDS = [
     type: "action",
     suit: "Love",
     number: null,
-    copies: DECK_CONFIG.actionCardCopies,
+    copies: 2,
     verse: "Mark 12:41-44",
     artwork: "cards/Action - Two Coins.jpg",
     playText: "Give 1 card from your hand to another player. Gain 1 Blessing.",
@@ -223,14 +224,14 @@ const ACTION_CARDS = [
     type: "action",
     suit: "Faith",
     number: null,
-    copies: DECK_CONFIG.actionCardCopies,
+    copies: 3,
     verse: "Matthew 14:22-33",
     artwork: "cards/Action - Walk on Water.jpg",
     playText: "Play any 1 card from your hand regardless of suit or number.",
-    blessingText: "Play any 1 card from your hand regardless of suit or number. Then gain 1 Blessing.",
+    blessingText: "Play any 1 card from your hand regardless of suit or number. Pick who plays next.",
     blessingCost: 1,
-    effect: { type: "walk_on_water", rewardBlessing: false },
-    blessingEffect: { type: "walk_on_water", rewardBlessing: true }
+    effect: { type: "walk_on_water", pickNext: false },
+    blessingEffect: { type: "walk_on_water", pickNext: true }
   }
 ];
 
@@ -239,11 +240,13 @@ const ACTION_CARDS = [
 //  - "Grace" from the original brief now appears in the final
 //    printed art as "Redeemed", with its mechanic confirmed as
 //    returning 1 card from the discard pile to hand.
-//  - "Strength" is implemented per the printed card text ("Play on
-//    any card, at any time. Continue play after you.") as: after
-//    the current action resolves, the turn passes to the Strength
-//    player next, out of normal order. This is an interpretation —
-//    flagged in engine.js — revisit if playtesting shows otherwise.
+//  - "Strength" now reads "Play continues with the player after
+//    you," which resolves the earlier ambiguity: it does NOT grant
+//    the Strength player another turn. In this app only the current
+//    player can ever act on their own hand, so "the player after
+//    you" is exactly the player who'd go next anyway — Strength
+//    resolves like any other Miracle (see `renewed_strength` in
+//    engine.js), just playable "at any time" per its timing.
 const MIRACLE_CARDS = [
   {
     id: "wisdom",
@@ -251,7 +254,7 @@ const MIRACLE_CARDS = [
     type: "miracle",
     suit: null,
     number: null,
-    copies: DECK_CONFIG.miracleCardCopies,
+    copies: 2,
     verse: "Psalm 119:105",
     artwork: "cards/Miracle - Wisdom.jpg",
     text: "Play on any card. Choose the active suit.",
@@ -264,7 +267,7 @@ const MIRACLE_CARDS = [
     type: "miracle",
     suit: null,
     number: null,
-    copies: DECK_CONFIG.miracleCardCopies,
+    copies: 3,
     verse: "2 Corinthians 12:9",
     artwork: "cards/Miracle - Redeemed.jpg",
     text: "Play on any card. Return 1 card from the discard pile to your hand.",
@@ -277,7 +280,7 @@ const MIRACLE_CARDS = [
     type: "miracle",
     suit: null,
     number: null,
-    copies: DECK_CONFIG.miracleCardCopies,
+    copies: 3,
     verse: "John 14:27",
     artwork: "cards/Miracle - Peace.jpg",
     text: "Play on any card. No one may play Action cards until your next turn.",
@@ -290,7 +293,7 @@ const MIRACLE_CARDS = [
     type: "miracle",
     suit: null,
     number: null,
-    copies: DECK_CONFIG.miracleCardCopies,
+    copies: 2,
     verse: "Psalm 23:5",
     artwork: "cards/Miracle - Overflow.jpg",
     text: "Play on any card. Discard any number of cards from your hand. Draw that many cards.",
@@ -303,7 +306,7 @@ const MIRACLE_CARDS = [
     type: "miracle",
     suit: null,
     number: null,
-    copies: DECK_CONFIG.miracleCardCopies,
+    copies: 3,
     verse: "Psalm 5:12",
     artwork: "cards/Miracle - Favor.jpg",
     text: "Play on any card. Gain 1 Blessing.",
@@ -316,12 +319,12 @@ const MIRACLE_CARDS = [
     type: "miracle",
     suit: null,
     number: null,
-    copies: DECK_CONFIG.miracleCardCopies,
+    copies: 2,
     verse: "Isaiah 40:31",
     artwork: "cards/Miracle - Strength.jpg",
-    text: "Play on any card, at any time. Continue play after you.",
+    text: "Play on any card, at any time. Play continues with the player after you.",
     timing: "any_time",
-    effect: { type: "take_next_turn" }
+    effect: { type: "renewed_strength" }
   }
 ];
 
@@ -332,3 +335,9 @@ const CARD_LIBRARY = {};
 [...NUMBER_CARDS, ...ACTION_CARDS, ...MIRACLE_CARDS].forEach(c => {
   CARD_LIBRARY[c.id] = c;
 });
+
+// Total deck size, derived by summing every card's `copies` — never
+// hardcode this number elsewhere. Change any card's rarity above and
+// this (and the whole app) updates automatically.
+const TOTAL_DECK_SIZE = [...NUMBER_CARDS, ...ACTION_CARDS, ...MIRACLE_CARDS]
+  .reduce((sum, c) => sum + c.copies, 0);
