@@ -13,6 +13,7 @@ const els = sel => Array.from(document.querySelectorAll(sel));
 
 // ---- Screens ------------------------------------------------
 function showScreen(id) {
+  hideCardTooltip();
   els(".screen").forEach(s => s.classList.remove("active"));
   el(`#${id}`).classList.add("active");
 }
@@ -110,6 +111,11 @@ function renderPassScreen() {
 
 // ---- Main game screen ------------------------------------------
 function renderGameScreen() {
+  // The hand/discard/opponent DOM gets rebuilt below via innerHTML,
+  // which destroys any card the mouse is currently hovering without
+  // ever firing its "mouseleave" — that's what left the hover
+  // tooltip stuck on screen. Always clear it before rebuilding.
+  hideCardTooltip();
   const p = currentPlayer(GAME);
   el("#current-player-name").textContent = p.name;
   el("#turn-count").textContent = GAME.turnCount;
@@ -142,11 +148,15 @@ function renderGameScreen() {
     if (op.id === p.id) return;
     const badge = document.createElement("div");
     badge.className = "opponent-badge" + (i === GAME.currentPlayerIndex ? " current" : "");
-    badge.innerHTML = `<div class="opp-name">${op.name}</div>
-      <div class="opp-hand">${"🂠".repeat(Math.min(op.hand.length, 8))}${op.hand.length > 8 ? "+" : ""} <span>${op.hand.length}</span></div>
-      <div class="opp-blessings">✨ ${op.blessings}</div>`;
+    const initial = op.name.trim().charAt(0).toUpperCase() || "?";
+    badge.innerHTML = `<div class="opp-avatar">${initial}</div>
+      <div class="opp-info">
+        <div class="opp-name">${op.name}</div>
+        <div class="opp-meta"><span class="opp-hand">🂠 ${op.hand.length}</span><span class="opp-blessings">✨ ${op.blessings}</span></div>
+      </div>`;
     opponents.appendChild(badge);
   });
+
 
   // Current player's hand
   el("#my-blessings").textContent = p.blessings;
@@ -391,7 +401,8 @@ function onCardClick(card) {
   if (def.type === "number") {
     const result = playNumberCard(GAME, p.id, card.uid);
     persist();
-    afterPlay(result);
+    if (result.won) { renderPassScreen(); return; }
+    finishTurn();
     return;
   }
 
@@ -441,6 +452,7 @@ el("#draw-btn").addEventListener("click", () => {
   const p = currentPlayer(GAME);
   const drawn = drawCard(GAME, p.id, 1);
   GAME.freePlayPlayerId = null; // drawing expires an unused free play
+  pendingAfterCard = null;
   persist();
   if (drawn.length && canPlayCard(drawn[0], GAME, p.id)) {
     openModal(`
@@ -471,13 +483,86 @@ el("#draw-btn").addEventListener("click", () => {
   }
 });
 
-function afterPlay(result) {
-  if (result.won) {
-    persist();
-    renderPassScreen();
+// ---- Turn-finishing -------------------------------------------------
+// A single card play can end up granting a bonus "play 1 additional
+// card" (Mustard Seed, Living Water's Blessing, Good Samaritan's
+// Blessing, Walk On Water) or "play a revealed/discarded card" (Five
+// Stones, Loaves & Fish, Empty Tomb's Blessing). That bonus card can
+// itself be an Action or Miracle card needing its own full modal
+// resolution — so nothing in the engine advances the turn on its
+// own anymore; every path funnels through finishTurn() / 
+// finishMiracleTurn() here, which is also where a pending follow-up
+// (currently just Walk On Water's "pick who plays next") gets its
+// chance to run before the turn actually ends.
+let pendingAfterCard = null;
+
+function consumePendingAfterCard() {
+  if (pendingAfterCard) {
+    const fn = pendingAfterCard;
+    pendingAfterCard = null;
+    fn();
+    return true;
+  }
+  return false;
+}
+
+function finishTurn() {
+  if (consumePendingAfterCard()) return;
+  advanceTurn(GAME);
+  persist();
+  renderPassScreen();
+}
+
+// A Miracle's own effect (including who gets the free-play grant
+// next) always takes precedence over a pending follow-up like Walk
+// On Water's "pick who plays next" — so this discards any pending
+// callback rather than running it.
+function finishMiracleTurn() {
+  if (pendingAfterCard) {
+    log(GAME, "A pending choice was superseded by a Miracle's own effect.");
+    pendingAfterCard = null;
+  }
+  endTurnWithFreePlay(GAME);
+  persist();
+  renderPassScreen();
+}
+
+// Plays a card that's already been removed from the player's hand —
+// a revealed draw-pile card (Five Stones, Loaves & Fish), a
+// recovered discard-pile card (Empty Tomb's Blessing), or a bonus
+// "additional card" (Mustard Seed, Walk On Water, Good Samaritan's
+// Blessing) — and fully resolves whatever it actually does. Offers
+// the Play/Blessing choice for an Action card when the player can
+// afford it, exactly like a normal hand play would.
+function playExtraCard(playerId, card, onResult) {
+  const def = cardDef(card);
+  const player = findPlayer(GAME, playerId);
+  if (def.type === "action" && def.blessingCost > 0 && player.blessings >= def.blessingCost) {
+    openModal(`
+      <h3>${def.name}</h3>
+      <p class="verse">${def.verse}</p>
+      <div class="choice-row">
+        <button class="btn" id="choice-play">Play<br><small>${def.playText}</small></button>
+        <button class="btn btn-gold" id="choice-blessing">Spend ${def.blessingCost} Blessing${def.blessingCost > 1 ? "s" : ""}<br><small>${def.blessingText}</small></button>
+      </div>
+    `);
+    el("#choice-play").addEventListener("click", () => {
+      closeModal();
+      const result = playHandCardDirect(GAME, playerId, card, false);
+      persist();
+      onResult(result);
+    });
+    el("#choice-blessing").addEventListener("click", () => {
+      closeModal();
+      const result = playHandCardDirect(GAME, playerId, card, true);
+      persist();
+      onResult(result);
+    });
     return;
   }
-  renderPassScreen();
+  const result = playHandCardDirect(GAME, playerId, card, false);
+  persist();
+  onResult(result);
 }
 
 // ---- Effect result / needsInput dispatcher -----------------------
@@ -486,8 +571,8 @@ function handleEffectResult(result, playerId) {
   if (result.won) { persist(); renderPassScreen(); return; }
   if (result.error) { alert(result.error); renderGameScreen(); return; }
   if (!result.needsInput) {
-    persist();
-    renderPassScreen();
+    if (result.miracle) finishMiracleTurn();
+    else finishTurn();
     return;
   }
   routeNeedsInput(result, playerId);
@@ -519,6 +604,7 @@ function routeNeedsInput(result, playerId) {
 
 // ---- Modal shell --------------------------------------------------
 function openModal(html) {
+  hideCardTooltip();
   el("#modal-body").innerHTML = html;
   el("#modal-overlay").classList.add("active");
 }
@@ -529,9 +615,7 @@ function closeModal() {
 
 function endTurnAndClose() {
   closeModal();
-  advanceTurn(GAME);
-  persist();
-  renderPassScreen();
+  finishTurn();
 }
 
 // Used to finish a Miracle card's needsInput flow (Wisdom, Redeemed,
@@ -539,9 +623,7 @@ function endTurnAndClose() {
 // grant passes to the next player, per the free-play rule.
 function endMiracleTurnAndClose() {
   closeModal();
-  endTurnWithFreePlay(GAME);
-  persist();
-  renderPassScreen();
+  finishMiracleTurn();
 }
 
 
@@ -611,10 +693,8 @@ function modalFiveStonesPlay(result, playerId) {
       c.addEventListener("click", () => {
         const rest = result.revealed.filter(r => r.uid !== card.uid);
         GAME.drawPile.unshift(...shuffle(rest));
-        playCardDirectly(GAME, playerId, card);
         log(GAME, `${player.name} played a card revealed by Five Stones.`);
-        if (checkWin(GAME, playerId)) { persist(); closeModal(); renderPassScreen(); return; }
-        endTurnAndClose();
+        playExtraCard(playerId, card, r => handleEffectResult(r, playerId));
       });
     }
     slot.appendChild(c);
@@ -668,10 +748,8 @@ function modalLoavesAndFishChoose(result, playerId) {
       c.addEventListener("click", () => {
         const rest = result.revealed.filter(r => r.uid !== card.uid);
         GAME.drawPile.unshift(...shuffle(rest));
-        playCardDirectly(GAME, playerId, card);
         log(GAME, `${player.name} played a card revealed by Loaves & Fish.`);
-        if (checkWin(GAME, playerId)) { persist(); closeModal(); renderPassScreen(); return; }
-        endTurnAndClose();
+        playExtraCard(playerId, card, r => handleEffectResult(r, playerId));
       });
     }
     slot.appendChild(c);
@@ -695,13 +773,11 @@ function modalMustardSeedExtra(result, playerId) {
       c.addEventListener("click", () => {
         const def = cardDef(card);
         player.hand = player.hand.filter(h => h.uid !== card.uid);
-        playCardDirectly(GAME, playerId, card);
         if (result.rewardSameSuit && def.suit === firstSuit) {
           player.blessings += 1;
           log(GAME, `${player.name} gained 1 Blessing (same suit bonus).`);
         }
-        if (checkWin(GAME, playerId)) { persist(); closeModal(); renderPassScreen(); return; }
-        endTurnAndClose();
+        playExtraCard(playerId, card, r => handleEffectResult(r, playerId));
       });
     }
     slot.appendChild(c);
@@ -842,10 +918,8 @@ function modalEmptyTomb(result, playerId) {
         if (checkWin(GAME, playerId)) { persist(); closeModal(); renderPassScreen(); return; }
         endTurnAndClose();
       } else {
-        playCardDirectly(GAME, playerId, card);
         log(GAME, `${player.name} played a card from the discard pile regardless of suit (The Empty Tomb).`);
-        if (checkWin(GAME, playerId)) { persist(); closeModal(); renderPassScreen(); return; }
-        endTurnAndClose();
+        playExtraCard(playerId, card, r => handleEffectResult(r, playerId));
       }
     });
     slot.appendChild(c);
@@ -897,9 +971,7 @@ function promptOptionalPlay(playerId, onDone) {
     c.classList.add("selectable");
     c.addEventListener("click", () => {
       player.hand = player.hand.filter(h => h.uid !== card.uid);
-      playCardDirectly(GAME, playerId, card);
-      if (checkWin(GAME, playerId)) { persist(); closeModal(); renderPassScreen(); return; }
-      onDone();
+      playExtraCard(playerId, card, r => handleEffectResult(r, playerId));
     });
     slot.appendChild(c);
   });
@@ -1010,13 +1082,10 @@ function modalWalkOnWater(result, playerId) {
     c.classList.add("selectable");
     c.addEventListener("click", () => {
       player.hand = player.hand.filter(h => h.uid !== card.uid);
-      playCardDirectly(GAME, playerId, card);
-      if (checkWin(GAME, playerId)) { persist(); closeModal(); renderPassScreen(); return; }
       if (result.pickNext) {
-        modalPickNextPlayer(playerId);
-      } else {
-        endTurnAndClose();
+        pendingAfterCard = () => modalPickNextPlayer(playerId);
       }
+      playExtraCard(playerId, card, r => handleEffectResult(r, playerId));
     });
     slot.appendChild(c);
   });
@@ -1051,7 +1120,12 @@ function modalChooseSuit(result, playerId) {
       GAME.activeSuit = suit;
       GAME.activeNumber = null;
       log(GAME, `Active suit set to ${suit} (Wisdom).`);
-      endMiracleTurnAndClose();
+      // Unlike other Miracles, Wisdom's whole effect is that the
+      // active player picks the suit — so the next player must
+      // respect it, not get unrestricted free play (which would
+      // make the choice pointless). Plain endTurnAndClose(), not
+      // endMiracleTurnAndClose().
+      endTurnAndClose();
     });
     slot.appendChild(btn);
   });
