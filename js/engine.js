@@ -60,7 +60,7 @@ function createGameState(playerNames) {
     winnerId: null,
     turnCount: 1,
     gameLog: [],
-    strengthQueue: [] // player ids queued to go next via the Strength miracle
+    turnOverrideQueue: [] // player ids queued to go next (e.g. Walk On Water's Blessing ability)
   };
 
   // Section 4: Initial Setup
@@ -186,13 +186,13 @@ function reshuffleDiscardIntoDraw(state) {
 
 // ---- Turn advancement --------------------------------------------
 function advanceTurn(state) {
-  if (state.strengthQueue.length > 0) {
-    const nextId = state.strengthQueue.shift();
+  if (state.turnOverrideQueue.length > 0) {
+    const nextId = state.turnOverrideQueue.shift();
     const idx = state.players.findIndex(p => p.id === nextId);
     if (idx !== -1) {
       state.currentPlayerIndex = idx;
       state.turnCount += 1;
-      log(state, `${state.players[idx].name} continues play (Strength).`);
+      log(state, `${state.players[idx].name} plays next.`);
       checkActionLockExpiry(state, nextId);
       return;
     }
@@ -371,7 +371,7 @@ function resolveActionEffect(state, playerId, effect) {
     case "two_coins":
       return { needsInput: "two_coins_give", mode: effect.mode, done: false };
     case "walk_on_water":
-      return { needsInput: "walk_on_water_choose", rewardBlessing: effect.rewardBlessing, done: false };
+      return { needsInput: "walk_on_water_choose", pickNext: effect.pickNext, done: false };
     default:
       advanceTurn(state);
       return { done: true };
@@ -397,9 +397,11 @@ function resolveMiracleEffect(state, playerId, effect) {
       log(state, `${player.name} gained ${effect.amount} Blessing from Favor.`);
       endTurnWithFreePlay(state);
       return { done: true };
-    case "take_next_turn":
-      state.strengthQueue.push(playerId);
-      log(state, `${player.name} will continue play next (Strength).`);
+    case "renewed_strength":
+      // "Play continues with the player after you" — this is exactly
+      // normal turn advancement (the player after the current one),
+      // so Strength doesn't need any special turn-order handling.
+      log(state, `${player.name} played Strength.`);
       endTurnWithFreePlay(state);
       return { done: true };
     default:
