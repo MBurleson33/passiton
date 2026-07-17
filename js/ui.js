@@ -756,10 +756,11 @@ function doExchangeWithDrawPile(playerId) {
 function modalBigStorm(result, playerId) {
   const player = findPlayer(GAME, playerId);
   if (result.mode === "single") {
-    openModal(`<h3>The Big Storm</h3><p>Choose yourself or another player — they may discard 1 card.</p>
+    const others = GAME.players.filter(p => p.id !== playerId);
+    openModal(`<h3>The Big Storm</h3><p>Choose another player — they may discard 1 card.</p>
       <div class="choice-row" id="target-slot"></div>`);
     const slot = el("#target-slot");
-    GAME.players.forEach(p => {
+    others.forEach(p => {
       const btn = document.createElement("button");
       btn.className = "btn";
       btn.textContent = p.name;
@@ -767,9 +768,9 @@ function modalBigStorm(result, playerId) {
       slot.appendChild(btn);
     });
   } else {
-    // double: self + one other, both discard, then choose suit
+    // double: self + one other, each may discard — no suit choice per the current card text
     const others = GAME.players.filter(p => p.id !== playerId);
-    openModal(`<h3>The Big Storm (Blessing)</h3><p>Choose another player. You and they each discard 1 card.</p>
+    openModal(`<h3>The Big Storm (Blessing)</h3><p>Choose another player. You and they may each discard 1 card.</p>
       <div class="choice-row" id="target-slot"></div>`);
     const slot = el("#target-slot");
     others.forEach(p => {
@@ -778,9 +779,7 @@ function modalBigStorm(result, playerId) {
       btn.textContent = p.name;
       btn.addEventListener("click", () => {
         promptDiscardOne(playerId, () => {
-          promptDiscardOne(p.id, () => {
-            modalChooseSuitInline(() => endTurnAndClose());
-          });
+          promptDiscardOne(p.id, () => endTurnAndClose());
         });
       });
       slot.appendChild(btn);
@@ -874,11 +873,9 @@ function modalGoodSamaritan(result, playerId) {
           op.hand.push(card);
           log(GAME, `${player.name} gave a card to ${op.name} (The Good Samaritan).`);
           if (result.mode === "normal") {
-            closeModal();
-            renderGameScreen();
-            alert(`${player.name}, play 1 additional card from your hand.`);
+            endTurnAndClose();
           } else {
-            promptOptionalPlay(playerId, () => promptOptionalPlay(op.id, () => endTurnAndClose()));
+            promptOptionalPlay(playerId, () => endTurnAndClose());
           }
         });
         hslot.appendChild(c);
@@ -1014,14 +1011,31 @@ function modalWalkOnWater(result, playerId) {
     c.addEventListener("click", () => {
       player.hand = player.hand.filter(h => h.uid !== card.uid);
       playCardDirectly(GAME, playerId, card);
-      if (result.rewardBlessing) {
-        player.blessings += 1;
-        log(GAME, `${player.name} gained 1 Blessing (Walk On Water).`);
-      }
       if (checkWin(GAME, playerId)) { persist(); closeModal(); renderPassScreen(); return; }
-      endTurnAndClose();
+      if (result.pickNext) {
+        modalPickNextPlayer(playerId);
+      } else {
+        endTurnAndClose();
+      }
     });
     slot.appendChild(c);
+  });
+}
+
+function modalPickNextPlayer(playerId) {
+  openModal(`<h3>Walk On Water (Blessing)</h3><p>Pick who plays next.</p>
+    <div class="choice-row" id="target-slot"></div>`);
+  const slot = el("#target-slot");
+  GAME.players.forEach(p => {
+    const btn = document.createElement("button");
+    btn.className = "btn";
+    btn.textContent = p.id === playerId ? `${p.name} (yourself)` : p.name;
+    btn.addEventListener("click", () => {
+      GAME.turnOverrideQueue.push(p.id);
+      log(GAME, `${findPlayer(GAME, playerId).name} chose ${p.name} to play next (Walk On Water).`);
+      endTurnAndClose();
+    });
+    slot.appendChild(btn);
   });
 }
 
