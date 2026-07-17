@@ -5,7 +5,7 @@
 // Bump CACHE_NAME whenever you change any cached file so
 // returning players get the update instead of a stale cache.
 // ============================================================
-const CACHE_NAME = "pass-it-on-v7";
+const CACHE_NAME = "pass-it-on-v8";
 
 const ASSETS = [
   "./",
@@ -71,7 +71,9 @@ self.addEventListener("fetch", event => {
       if (cached) return cached;
       return fetch(event.request).then(response => {
         // Cache new same-origin GET requests as they're seen (e.g. future card art)
-        if (event.request.method === "GET" && response.ok && event.request.url.startsWith(self.location.origin)) {
+        const isSameOrigin = event.request.url.startsWith(self.location.origin);
+        const isGoogleFonts = event.request.url.startsWith("https://fonts.googleapis.com") || event.request.url.startsWith("https://fonts.gstatic.com");
+        if (event.request.method === "GET" && response.ok && (isSameOrigin || isGoogleFonts)) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
         }
