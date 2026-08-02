@@ -136,41 +136,67 @@ function renderGameScreen() {
     el("#free-play-badge").textContent = "✨ Free play — any card in your hand may be played";
   }
 
-  // Discard pile top card
+  // Discard pile top card — large "hero" size as the table's focal point
   const top = GAME.discardPile[GAME.discardPile.length - 1];
   el("#discard-pile").innerHTML = "";
-  el("#discard-pile").appendChild(renderCard(top, { size: "large" }));
+  el("#discard-pile").appendChild(renderCard(top, { size: "hero" }));
 
-  // Other players' hand counts
-  const opponents = el("#opponents-row");
-  opponents.innerHTML = "";
-  GAME.players.forEach((op, i) => {
-    if (op.id === p.id) return;
+  // Other players, seated around the table ring rather than in a row.
+  // The arc half-width scales with how many are seated: with just 1
+  // or 2 opponents they stay clustered near the top; with more, the
+  // arc widens toward the sides. The bottom stays clear either way,
+  // for the draw pile / open space (matching a normal card-table
+  // layout — you don't sit "behind" your own cards).
+  const seats = el("#opponent-seats");
+  seats.innerHTML = "";
+  const opponentList = GAME.players.filter(op => op.id !== p.id);
+  const seatCount = opponentList.length;
+  const halfWidthByCount = { 1: 0, 2: 55, 3: 85, 4: 112, 5: 140 };
+  const halfWidth = halfWidthByCount[seatCount] ?? 140;
+  opponentList.forEach((op, seatIndex) => {
+    const origIndex = GAME.players.findIndex(pl => pl.id === op.id);
+    const angleDeg = seatCount === 1
+      ? 0
+      : -halfWidth + seatIndex * ((2 * halfWidth) / (seatCount - 1));
+    const angleRad = (angleDeg * Math.PI) / 180;
+    const rx = 44, ry = 42; // ellipse radii, percent of table-circle
+    const x = 50 + rx * Math.sin(angleRad);
+    const y = 50 - ry * Math.cos(angleRad);
+
     const badge = document.createElement("div");
-    badge.className = "opponent-badge" + (i === GAME.currentPlayerIndex ? " current" : "");
+    badge.className = "opponent-badge" + (origIndex === GAME.currentPlayerIndex ? " current" : "");
+    badge.style.left = `${x}%`;
+    badge.style.top = `${y}%`;
     const initial = op.name.trim().charAt(0).toUpperCase() || "?";
     badge.innerHTML = `<div class="opp-avatar">${initial}</div>
       <div class="opp-info">
         <div class="opp-name">${op.name}</div>
         <div class="opp-meta"><span class="opp-hand">🂠 ${op.hand.length}</span><span class="opp-blessings">✨ ${op.blessings}</span></div>
       </div>`;
-    opponents.appendChild(badge);
+    seats.appendChild(badge);
   });
 
-
-  // Current player's hand
+  // Current player's hand — fanned like cards held in hand, rather
+  // than a flat overlapping row.
   el("#my-blessings").textContent = p.blessings;
   const handEl = el("#player-hand");
   handEl.innerHTML = "";
-  p.hand.forEach(card => {
+  const n = p.hand.length;
+  const mid = (n - 1) / 2;
+  const maxSpreadDeg = 22; // total fan doesn't get wider than this regardless of hand size
+  const perCardDeg = mid > 0 ? Math.min(7, maxSpreadDeg / mid) : 0;
+  p.hand.forEach((card, i) => {
     const legal = canPlayCard(card, GAME, p.id);
     const cardEl = renderCard(card, { size: "medium", legal });
+    const offset = i - mid;
+    cardEl.style.setProperty("--rot", `${offset * perCardDeg}deg`);
+    cardEl.style.setProperty("--arc-y", `${Math.abs(offset) * 4}px`);
     cardEl.addEventListener("click", () => onCardClick(card));
     handEl.appendChild(cardEl);
   });
 
   const anyLegal = hasAnyLegalCard(GAME, p.id);
-  el("#draw-btn").style.display = anyLegal ? "none" : "inline-block";
+  el("#draw-btn").style.display = anyLegal ? "none" : "flex";
   el("#hint-text").textContent = anyLegal
     ? "Tap a highlighted card to play it."
     : "No legal plays — draw a card.";
