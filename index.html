@@ -61,21 +61,22 @@
   <div id="action-lock-badge" class="lock-badge"></div>
   <div id="free-play-badge" class="lock-badge free-play-badge"></div>
 
-  <div class="opponents-row" id="opponents-row"></div>
-
-  <div class="table-area">
-    <div class="pile-group">
-      <div class="pile-label">Draw (<span id="draw-pile-count">0</span>)</div>
-      <div class="draw-pile-visual" id="draw-btn" title="Draw a card">
-        <img src="cards/Pass It On - Back.jpg" alt="Draw pile" />
+  <div class="table-wrap">
+    <div class="table-circle">
+      <div class="table-ring"></div>
+      <div id="opponent-seats" class="opponent-seats"></div>
+      <div class="table-center">
+        <div id="discard-pile" class="discard-pile-visual"></div>
+        <div class="active-badges">
+          <span id="active-suit-badge" class="badge">—</span>
+          <span id="active-number-badge" class="badge badge-number">—</span>
+        </div>
       </div>
-    </div>
-    <div class="pile-group">
-      <div class="pile-label">Discard</div>
-      <div id="discard-pile" class="discard-pile-visual"></div>
-      <div class="active-badges">
-        <span id="active-suit-badge" class="badge">—</span>
-        <span id="active-number-badge" class="badge badge-number">—</span>
+      <div class="draw-pile-group" id="draw-btn" title="Draw a card">
+        <div class="draw-pile-visual">
+          <img src="cards/Pass It On - Back.jpg" alt="Draw pile" />
+        </div>
+        <div class="pile-label">Draw · <span id="draw-pile-count">0</span></div>
       </div>
     </div>
   </div>
