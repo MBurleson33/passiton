@@ -204,46 +204,71 @@ select {
   margin: 6px 0; text-align: center;
 }
 
-.opponents-row {
-  width: 100%; display: flex; gap: 10px; overflow-x: auto; padding: 10px 2px; justify-content: center; flex-wrap: wrap;
-}
 .opponent-badge {
-  display: flex; align-items: center; gap: 9px;
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex; align-items: center; gap: 8px;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 7px 13px 7px 7px; font-size: 0.75rem; text-align: left;
+  padding: 6px 12px 6px 6px; font-size: 0.72rem; text-align: left;
   box-shadow: var(--shadow-sm); transition: box-shadow 0.15s ease, border-color 0.15s ease;
+  white-space: nowrap;
 }
 .opponent-badge.current { border-color: var(--accent); box-shadow: var(--ring-accent); }
 .opp-avatar {
-  width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+  width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
   background: linear-gradient(155deg, var(--accent-2), var(--accent-2-hi));
-  color: #062622; font-family: var(--font-head); font-weight: 800; font-size: 0.85rem;
+  color: #062622; font-family: var(--font-head); font-weight: 800; font-size: 0.8rem;
   display: flex; align-items: center; justify-content: center;
 }
 .opponent-badge.current .opp-avatar { background: linear-gradient(155deg, var(--accent), var(--accent-hi)); color: #201404; }
 .opp-info { display: flex; flex-direction: column; gap: 2px; }
-.opp-name { font-weight: 700; color: var(--text); font-family: var(--font-body); line-height: 1.1; }
-.opp-meta { display: flex; gap: 8px; color: var(--text-dim); }
+.opp-name { font-weight: 700; color: var(--text); font-family: var(--font-body); line-height: 1.1; max-width: 90px; overflow: hidden; text-overflow: ellipsis; }
+.opp-meta { display: flex; gap: 7px; color: var(--text-dim); }
 .opp-blessings { color: var(--accent-hi); font-weight: 600; }
 
-.table-area {
-  display: flex; gap: 32px; align-items: flex-start; justify-content: center;
-  margin: 14px 0; flex: 1; padding: 20px 16px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+/* ---- Circular table ---- */
+.table-wrap {
+  width: 100%; flex: 1; display: flex; align-items: center; justify-content: center;
+  min-height: 0; padding: 6px 0;
 }
-.pile-group { text-align: center; }
-.pile-label { color: var(--text-dim); font-size: 0.72rem; margin-bottom: 6px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+.table-circle {
+  position: relative;
+  width: min(96vw, 480px, 60vh);
+  aspect-ratio: 1 / 0.94;
+  max-height: 100%;
+}
+.table-ring {
+  position: absolute; inset: 0; border-radius: 50%;
+  background:
+    conic-gradient(from 0deg, rgba(246,168,33,0.16), rgba(45,212,191,0.12), rgba(246,168,33,0.16));
+  border: 1px solid var(--border);
+  box-shadow: inset 0 0 40px rgba(0,0,0,0.35), var(--shadow-md);
+  animation: ring-spin 24s linear infinite;
+}
+@keyframes ring-spin {
+  from { background-position: 0% 0%; filter: hue-rotate(0deg); }
+  to { filter: hue-rotate(360deg); }
+}
+.opponent-seats { position: absolute; inset: 0; }
+.table-center {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+.draw-pile-group {
+  position: absolute; right: 4%; bottom: 6%;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  cursor: pointer;
+}
+.pile-label { color: var(--text-dim); font-size: 0.68rem; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; }
 .draw-pile-visual {
-  width: 90px; height: 126px; cursor: pointer; border-radius: var(--radius-sm); overflow: hidden;
+  width: 62px; height: 87px; cursor: pointer; border-radius: var(--radius-sm); overflow: hidden;
   box-shadow: var(--shadow-md); transition: transform 0.15s ease, box-shadow 0.15s ease;
   border: 1px solid var(--border-strong);
 }
 .draw-pile-visual:active { transform: scale(0.95); }
 .draw-pile-visual img { width: 100%; height: 100%; object-fit: cover; }
-.discard-pile-visual { width: 90px; height: 126px; filter: drop-shadow(0 8px 16px rgba(0,0,0,0.4)); }
-.active-badges { display: flex; gap: 6px; justify-content: center; margin-top: 8px; }
+.discard-pile-visual { width: 148px; height: 207px; filter: drop-shadow(0 12px 22px rgba(0,0,0,0.5)); }
+.active-badges { display: flex; gap: 6px; justify-content: center; }
 .badge {
   display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 0.72rem; font-weight: 700;
   background: var(--surface-2); color: var(--text); letter-spacing: 0.02em; border: 1px solid var(--border-strong);
@@ -273,8 +298,9 @@ select {
   touch-action: manipulation;
 }
 .card-small { width: 60px; height: 84px; }
-.card-medium { width: 78px; height: 109px; }
-.card-large { width: 90px; height: 126px; }
+.card-medium { width: 88px; height: 123px; }
+.card-large { width: 104px; height: 146px; }
+.card-hero { width: 148px; height: 207px; }
 .card.legal {
   border-color: var(--accent);
   box-shadow: var(--shadow-md), var(--ring-accent);
@@ -318,7 +344,32 @@ select {
 }
 .hand-header { display: flex; justify-content: space-between; font-size: 0.82rem; color: var(--text-dim); font-weight: 500; padding: 0 6px 8px; }
 .my-blessings { color: var(--accent-hi); font-weight: 700; }
-.hand-scroll { display: flex; gap: 10px; overflow-x: auto; padding: 6px 6px 14px; }
+.hand-scroll { display: flex; gap: 0; overflow-x: auto; padding: 14px 18px 14px; align-items: flex-end; }
+#player-hand .card { margin-left: -24px; }
+#player-hand .card:first-child { margin-left: 0; }
+
+/* ---- Hand fan ----
+   Each hand card gets --rot / --arc-y set inline by ui.js based on
+   its position relative to the middle of the hand, so the row reads
+   as a fanned hand of cards rather than a flat overlapping strip.
+   These rules compose that rotation with the existing legal/active
+   states rather than overriding them. */
+#player-hand .card {
+  transform: rotate(var(--rot, 0deg)) translateY(var(--arc-y, 0px));
+  transform-origin: bottom center;
+}
+#player-hand .card.legal {
+  transform: rotate(var(--rot, 0deg)) translateY(calc(var(--arc-y, 0px) - 10px));
+}
+#player-hand .card.legal:active {
+  transform: rotate(var(--rot, 0deg)) translateY(calc(var(--arc-y, 0px) - 12px)) scale(0.98);
+}
+@media (hover: hover) and (pointer: fine) {
+  #player-hand .card.legal:hover {
+    transform: rotate(var(--rot, 0deg)) translateY(calc(var(--arc-y, 0px) - 12px));
+    box-shadow: var(--shadow-lg), var(--ring-accent);
+  }
+}
 
 .game-log {
   display: none; position: fixed; bottom: 0; left: 0; right: 0; max-height: 40vh; overflow-y: auto;
@@ -368,8 +419,6 @@ select {
 .card.suit-word { border-color: var(--word); }
 
 @media (max-width: 400px) {
-  .card-medium { width: 66px; height: 92px; }
-  .card-large { width: 78px; height: 109px; }
   .brand-title { font-size: 1.9rem; }
   .home-wrap, .setup-wrap, .results-wrap { padding: 30px 22px; }
 }
@@ -417,15 +466,17 @@ select {
    than introducing a separate desktop layout. ---- */
 @media (min-width: 700px) {
   .card-small { width: 92px; height: 129px; }
-  .card-medium { width: 122px; height: 171px; }
-  .card-large { width: 150px; height: 210px; }
+  .card-medium { width: 112px; height: 157px; }
+  .card-large { width: 132px; height: 185px; }
+  .card-hero { width: 190px; height: 266px; }
 
   .num-suit { font-size: 0.85rem; }
   .num-value { font-size: 2.6rem; }
 
-  .draw-pile-visual, .discard-pile-visual { width: 150px; height: 210px; }
+  .table-circle { width: min(80vw, 560px, 62vh); }
+  .draw-pile-visual { width: 78px; height: 109px; }
+  .discard-pile-visual { width: 190px; height: 266px; }
   .pile-label { font-size: 0.92rem; }
-  .table-area { gap: 64px; margin: 24px 0; padding: 26px; }
 
   .badge { font-size: 0.9rem; padding: 5px 15px; }
 
@@ -451,14 +502,15 @@ select {
   .current-player-tag { font-size: 1.35rem; }
   .icon-btn { font-size: 1.25rem; width: 46px; height: 46px; }
 
-  .opponents-row { gap: 16px; padding: 16px 0; }
-  .opponent-badge { font-size: 0.9rem; padding: 10px 20px 10px 10px; min-width: 110px; }
-  .opp-avatar { width: 40px; height: 40px; font-size: 1.05rem; }
+  .opponent-badge { font-size: 0.88rem; padding: 9px 18px 9px 9px; }
+  .opp-avatar { width: 38px; height: 38px; font-size: 1rem; }
+  .opp-name { max-width: 130px; }
 
   .hint-text { font-size: 1rem; margin: 10px 0; }
 
   .hand-header { font-size: 1rem; padding: 0 10px 10px; }
-  .hand-scroll { gap: 16px; padding: 8px 10px 22px; }
+  .hand-scroll { padding: 18px 24px 22px; }
+  #player-hand .card { margin-left: -34px; }
 
   .lock-badge { font-size: 0.92rem; padding: 9px 20px; }
 
@@ -480,9 +532,12 @@ select {
 
 @media (min-width: 1100px) {
   .card-small { width: 108px; height: 151px; }
-  .card-medium { width: 140px; height: 196px; }
-  .card-large { width: 170px; height: 238px; }
-  .draw-pile-visual, .discard-pile-visual { width: 170px; height: 238px; }
+  .card-medium { width: 132px; height: 185px; }
+  .card-large { width: 154px; height: 216px; }
+  .card-hero { width: 220px; height: 308px; }
+  .draw-pile-visual { width: 90px; height: 126px; }
+  .discard-pile-visual { width: 220px; height: 308px; }
+  .table-circle { width: min(72vw, 640px, 64vh); }
   .brand-title { font-size: 3.6rem; }
 }
 
