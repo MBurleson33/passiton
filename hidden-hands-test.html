@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pass It On — Hidden Hands Test</title>
+<style>
+  body {
+    font-family: -apple-system, system-ui, sans-serif;
+    background: #0a0d16;
+    color: #f3f5fb;
+    max-width: 520px;
+    margin: 30px auto;
+    padding: 0 20px 60px;
+  }
+  h1 { font-size: 1.3rem; text-align: center; }
+  p.sub { color: #9aa3ba; font-size: 0.85rem; text-align: center; }
+
+  #lobby { text-align: center; margin-top: 20px; }
+  #lobby .btn-primary, #lobby .btn-secondary {
+    display: block; width: 100%; font-size: 1.05rem; font-weight: 700;
+    padding: 14px; border-radius: 12px; border: none; cursor: pointer; margin: 10px 0;
+  }
+  #lobby .btn-primary { background: linear-gradient(135deg, #ffc266, #ff9d3d); color: #201404; }
+  #lobby .btn-secondary { background: rgba(255,255,255,0.08); color: #f3f5fb; border: 1px solid rgba(255,255,255,0.2); }
+  #lobby .or { color: #9aa3ba; font-size: 0.85rem; margin: 18px 0 6px; }
+  #join-row { display: flex; gap: 8px; }
+  #join-code-input {
+    flex: 1; font-size: 1.2rem; font-weight: 700; text-align: center; text-transform: uppercase;
+    letter-spacing: 0.15em; padding: 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.2);
+    background: rgba(255,255,255,0.06); color: #f3f5fb;
+  }
+  #room-code-banner {
+    text-align: center; background: rgba(255,194,102,0.12); border: 1px solid rgba(255,194,102,0.35);
+    border-radius: 12px; padding: 10px; margin-bottom: 14px; font-size: 0.9rem;
+  }
+  #room-code-banner b { font-size: 1.3rem; letter-spacing: 0.15em; color: #ffc266; }
+
+  #status {
+    display: block; text-align: center;
+    padding: 6px 14px; border-radius: 999px; font-size: 0.8rem; font-weight: 600;
+    margin: 12px auto; width: fit-content;
+  }
+  #status.connecting { background: rgba(246,168,33,0.15); color: #ffc266; }
+  #status.connected { background: rgba(41,214,200,0.15); color: #6ef0e4; }
+  #status.error { background: rgba(228,72,122,0.15); color: #ff9db6; }
+
+  .box {
+    background: rgba(255,255,255,0.05); border-radius: 14px; padding: 16px 18px;
+    margin: 16px 0; line-height: 1.6; font-size: 0.9rem;
+  }
+  .box.mine { border: 1px solid rgba(41,214,200,0.4); }
+  .box.theirs { border: 1px solid rgba(255,194,102,0.4); }
+  .box b { color: #ffc266; }
+  .box .card-value { font-family: monospace; font-size: 1.1rem; color: #6ef0e4; }
+  button.action-btn {
+    display: block; width: 100%; font-size: 0.95rem; font-weight: 700;
+    padding: 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.25);
+    background: rgba(255,255,255,0.08); color: #f3f5fb; cursor: pointer; margin-top: 8px;
+  }
+  #peek-result { margin-top: 10px; font-size: 0.88rem; }
+  #peek-result.denied { color: #6ef0e4; }
+  #peek-result.leaked { color: #ff9db6; font-weight: 700; }
+
+  #log {
+    margin-top: 24px; text-align: left; background: rgba(255,255,255,0.05);
+    border-radius: 12px; padding: 12px 16px; font-size: 0.78rem; color: #9aa3ba;
+    max-height: 180px; overflow-y: auto;
+  }
+  #log div { padding: 2px 0; }
+</style>
+</head>
+<body>
+
+<h1>Hidden Hands Test</h1>
+<p class="sub">
+  Tests whether Firestore Security Rules actually stop you from
+  reading the other player's private data — no Cloud Function
+  involved, just rules + Anonymous Auth. Each device gets a random
+  "secret card" only it should be able to read.
+</p>
+
+<div id="lobby">
+  <button id="host-btn" class="btn-primary">Host a new test room</button>
+  <p class="or">— or —</p>
+  <div id="join-row">
+    <input id="join-code-input" placeholder="CODE" maxlength="4" />
+    <button id="join-btn" class="btn-secondary" style="width:auto;">Join</button>
+  </div>
+</div>
+
+<div id="game" style="display:none">
+  <div id="room-code-banner"></div>
+  <div id="status" class="connecting">Connecting…</div>
+
+  <div class="box mine">
+    <b>Your secret card</b><br>
+    <span class="card-value" id="my-card">—</span>
+    <p style="color:#9aa3ba; font-size:0.8rem; margin:6px 0 0;">Read from your own private document — this should always work.</p>
+  </div>
+
+  <div class="box theirs">
+    <b>The other player's hand</b><br>
+    <span id="their-uid-status">Waiting for them to join…</span>
+    <button class="action-btn" id="peek-btn" style="display:none;">Try to read their secret card</button>
+    <div id="peek-result"></div>
+  </div>
+
+  <div id="log"></div>
+</div>
+
+<script src="js/firebase-config.js"></script>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.17.0/firebase-app.js";
+  import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.17.0/firebase-auth.js";
+  import {
+    getFirestore, doc, setDoc, updateDoc, getDoc, onSnapshot, arrayUnion
+  } from "https://www.gstatic.com/firebasejs/12.17.0/firebase-firestore.js";
+
+  const lobbyEl = document.getElementById("lobby");
+  const gameEl = document.getElementById("game");
+  const roomBanner = document.getElementById("room-code-banner");
+  const statusEl = document.getElementById("status");
+  const myCardEl = document.getElementById("my-card");
+  const theirUidStatusEl = document.getElementById("their-uid-status");
+  const peekBtn = document.getElementById("peek-btn");
+  const peekResultEl = document.getElementById("peek-result");
+  const logEl = document.getElementById("log");
+
+  function log(msg) {
+    const line = document.createElement("div");
+    line.textContent = `${new Date().toLocaleTimeString()} — ${msg}`;
+    logEl.prepend(line);
+  }
+  function setStatus(state, text) {
+    statusEl.className = state;
+    statusEl.textContent = text;
+  }
+  function generateRoomCode() {
+    const chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+    let code = "";
+    for (let i = 0; i < 4; i++) code += chars[Math.floor(Math.random() * chars.length)];
+    return code;
+  }
+  function randomSecretCard() {
+    const suits = ["Faith", "Hope", "Love", "Service", "Prayer", "Word"];
+    return `${suits[Math.floor(Math.random() * suits.length)]} ${1 + Math.floor(Math.random() * 6)}`;
+  }
+
+  if (!window.firebaseConfig || window.firebaseConfig.apiKey.startsWith("PASTE-")) {
+    lobbyEl.innerHTML = `<p style="color:#ff9db6">js/firebase-config.js still has placeholder values.</p>`;
+  } else {
+    const app = initializeApp(window.firebaseConfig);
+    const db = getFirestore(app);
+    const auth = getAuth(app);
+    let myUid = null;
+
+    log("Signing in anonymously…");
+    onAuthStateChanged(auth, user => {
+      if (!user) return;
+      myUid = user.uid;
+      log(`Signed in as ${myUid.slice(0, 8)}…`);
+      wireLobby();
+    });
+    signInAnonymously(auth).catch(err => log(`Auth error: ${err.code || ""} ${err.message}`));
+
+    function wireLobby() {
+      document.getElementById("host-btn").addEventListener("click", () => {
+        const code = generateRoomCode();
+        setUrl(code);
+        startGame(code, true);
+      });
+      document.getElementById("join-btn").addEventListener("click", () => {
+        const code = document.getElementById("join-code-input").value.trim().toUpperCase();
+        if (!code) return;
+        setUrl(code);
+        startGame(code, false);
+      });
+      const params = new URLSearchParams(location.search);
+      const existingRoom = params.get("room");
+      if (existingRoom) startGame(existingRoom, false);
+    }
+
+    function setUrl(roomId) {
+      const url = new URL(location.href);
+      url.searchParams.set("room", roomId);
+      history.replaceState(null, "", url);
+    }
+
+    async function startGame(roomId, isHost) {
+      lobbyEl.style.display = "none";
+      gameEl.style.display = "block";
+      roomBanner.innerHTML = `Room code: <b>${roomId}</b>${isHost ? " — share this with the other player" : ""}`;
+
+      const publicRef = doc(db, "games", roomId);
+      const myHandRef = doc(db, "games", roomId, "hands", myUid);
+      const mySecret = randomSecretCard();
+
+      try {
+        if (isHost) {
+          log("Creating public room doc…");
+          await setDoc(publicRef, { playerUids: [myUid], createdAt: Date.now() });
+        } else {
+          log("Joining — adding myself to the room's player list…");
+          await updateDoc(publicRef, { playerUids: arrayUnion(myUid) });
+        }
+        log("Writing my own private hand doc…");
+        await setDoc(myHandRef, { secretCard: mySecret });
+        myCardEl.textContent = mySecret;
+        setStatus("connected", "Connected");
+      } catch (err) {
+        setStatus("error", "Setup failed");
+        log(`Error: ${err.code || ""} ${err.message}`);
+        return;
+      }
+
+      let theirUid = null;
+      onSnapshot(publicRef, snap => {
+        const data = snap.data();
+        if (!data) return;
+        const others = (data.playerUids || []).filter(u => u !== myUid);
+        if (others.length === 0) {
+          theirUidStatusEl.textContent = "Waiting for them to join…";
+          return;
+        }
+        theirUid = others[0];
+        theirUidStatusEl.textContent = `Joined: ${theirUid.slice(0, 8)}…`;
+        peekBtn.style.display = "block";
+      }, err => {
+        log(`Public doc listener error: ${err.code || ""} ${err.message}`);
+      });
+
+      peekBtn.addEventListener("click", async () => {
+        if (!theirUid) return;
+        peekResultEl.textContent = "Trying…";
+        peekResultEl.className = "";
+        try {
+          const theirRef = doc(db, "games", roomId, "hands", theirUid);
+          const snap = await getDoc(theirRef);
+          if (snap.exists()) {
+            peekResultEl.textContent = `LEAKED — got their card: "${snap.data().secretCard}". Rules are NOT correctly restricting reads yet.`;
+            peekResultEl.className = "leaked";
+            log("Peek SUCCEEDED — this means the security rules aren't published/correct yet.");
+          } else {
+            peekResultEl.textContent = "Read succeeded but no data came back — unexpected, check rules.";
+            peekResultEl.className = "leaked";
+          }
+        } catch (err) {
+          peekResultEl.textContent = `Correctly denied (${err.code}) — hidden hands are working.`;
+          peekResultEl.className = "denied";
+          log(`Peek correctly denied: ${err.code}`);
+        }
+      });
+    }
+  }
+</script>
+</body>
+</html>
