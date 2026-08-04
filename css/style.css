@@ -186,9 +186,23 @@ h1, h2, h3 {
 .setup-wrap { max-width: 440px; }
 .setup-wrap h2 { color: var(--text); }
 .field-label { display: block; margin: 14px 0 6px; color: var(--text-dim); font-size: 0.88rem; font-weight: 500; }
-select {
-  font-family: var(--font-body); font-weight: 500; font-size: 1rem; padding: 10px 16px; border-radius: var(--radius-sm);
+.player-count-row {
+  display: flex; gap: 8px; justify-content: center; margin: 4px 0 8px;
+}
+.count-btn {
+  font-family: var(--font-body); font-weight: 700; font-size: 1rem;
+  width: 44px; height: 44px; border-radius: 50%;
   border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text);
+  cursor: pointer; transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+}
+.count-btn:active { transform: scale(0.92); }
+.count-btn.active {
+  background: linear-gradient(135deg, var(--accent-hi), var(--accent));
+  color: #201404; border-color: var(--accent-hi);
+  box-shadow: var(--shadow-sm), var(--glow-accent);
+}
+@media (hover: hover) and (pointer: fine) {
+  .count-btn:not(.active):hover { border-color: var(--text-dim); background: var(--surface); }
 }
 .player-name-row { display: flex; align-items: center; justify-content: space-between; margin: 8px 0; gap: 10px; }
 .player-name-row label { color: var(--text-dim); min-width: 80px; text-align: left; font-size: 0.9rem; }
@@ -526,7 +540,7 @@ select {
 
   .setup-wrap { max-width: 540px; }
   .field-label { font-size: 1rem; }
-  select { font-size: 1.05rem; padding: 12px 20px; }
+  .count-btn { width: 50px; height: 50px; font-size: 1.1rem; }
   .player-name-row input { font-size: 1.05rem; padding: 12px 18px; }
   .player-name-row label { font-size: 1rem; min-width: 110px; }
 
