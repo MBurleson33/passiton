@@ -240,17 +240,8 @@ function playNumberCard(state, playerId, cardUid) {
   const player = findPlayer(state, playerId);
   const idx = player.hand.findIndex(c => c.uid === cardUid);
   const card = player.hand[idx];
-  const def = cardDef(card);
   player.hand.splice(idx, 1);
-  state.discardPile.push(card);
-  state.activeSuit = def.suit;
-  state.activeNumber = def.number;
-  state.freePlayPlayerId = null;
-  log(state, `${player.name} played ${def.name}.`);
-
-  if (checkWin(state, playerId)) return { won: true };
-  advanceTurn(state);
-  return { won: false };
+  return playHandCardDirect(state, playerId, card, false);
 }
 
 // ---- Playing an Action card (Section 5) ------------------------
@@ -268,22 +259,7 @@ function playActionCard(state, playerId, cardUid, useBlessing) {
   }
 
   player.hand.splice(idx, 1);
-  state.discardPile.push(card);
-  state.activeSuit = def.suit;
-  state.activeNumber = null;
-  state.freePlayPlayerId = null;
-
-  if (useBlessing) {
-    player.blessings -= def.blessingCost;
-    log(state, `${player.name} played ${def.name} (Blessing ability).`);
-  } else {
-    log(state, `${player.name} played ${def.name}.`);
-  }
-
-  if (checkWin(state, playerId)) return { won: true };
-
-  const effect = useBlessing ? def.blessingEffect : def.effect;
-  return resolveActionEffect(state, playerId, effect);
+  return playHandCardDirect(state, playerId, card, useBlessing);
 }
 
 // ---- Playing a Miracle card (Section 5) -------------------------
@@ -291,16 +267,73 @@ function playMiracleCard(state, playerId, cardUid) {
   const player = findPlayer(state, playerId);
   const idx = player.hand.findIndex(c => c.uid === cardUid);
   const card = player.hand[idx];
+  player.hand.splice(idx, 1);
+  return playHandCardDirect(state, playerId, card, false);
+}
+
+// ---- Playing a card that's already out of the player's hand -----
+// Shared by the three functions above (for a normal play) AND by
+// every "play 1 additional card" / "play a revealed card" effect
+// (Mustard Seed, Living Water's Blessing, Good Samaritan's
+// Blessing, Walk On Water, Five Stones, Loaves & Fish, Empty
+// Tomb's Blessing). Previously those effects used a dumb helper
+// that just discarded the card and updated the active suit/number
+// without resolving anything if it was an Action or Miracle card —
+// this is the single place that now handles all three card types
+// correctly regardless of how the card came to be played.
+//
+// IMPORTANT: this never advances the turn itself. It returns the
+// same kind of descriptor as before ({ needsInput } / { done: true }
+// / { won: true }), and adds a `miracle: true` flag to immediate
+// Miracle resolutions so the caller knows to grant the free-play
+// chain (via finishMiracleTurn()) rather than a plain advance (via
+// finishTurn()) — see ui.js. Keeping turn-advancement out of the
+// engine here is what lets a nested "extra card" play (e.g. an
+// Action card chosen during Mustard Seed) run through its own full
+// needsInput chain and have the SAME shared completion logic end
+// the turn exactly once, at the right time.
+function playHandCardDirect(state, playerId, card, useBlessing) {
+  const player = findPlayer(state, playerId);
   const def = cardDef(card);
 
-  player.hand.splice(idx, 1);
-  state.discardPile.push(card);
-  state.freePlayPlayerId = null; // this player's own free play (if any) is now spent
-  log(state, `${player.name} played ${def.name} (Miracle).`);
+  if (def.type === "number") {
+    state.discardPile.push(card);
+    state.activeSuit = def.suit;
+    state.activeNumber = def.number;
+    state.freePlayPlayerId = null;
+    log(state, `${player.name} played ${def.name}.`);
+    if (checkWin(state, playerId)) return { won: true };
+    return { done: true };
+  }
 
-  if (checkWin(state, playerId)) return { won: true };
+  if (def.type === "action") {
+    if (useBlessing && player.blessings < def.blessingCost) {
+      return { error: "Not enough Blessings." };
+    }
+    state.discardPile.push(card);
+    state.activeSuit = def.suit;
+    state.activeNumber = null;
+    state.freePlayPlayerId = null;
+    if (useBlessing) {
+      player.blessings -= def.blessingCost;
+      log(state, `${player.name} played ${def.name} (Blessing ability).`);
+    } else {
+      log(state, `${player.name} played ${def.name}.`);
+    }
+    if (checkWin(state, playerId)) return { won: true };
+    const effect = useBlessing ? def.blessingEffect : def.effect;
+    return resolveActionEffect(state, playerId, effect);
+  }
 
-  return resolveMiracleEffect(state, playerId, def.effect);
+  if (def.type === "miracle") {
+    state.discardPile.push(card);
+    state.freePlayPlayerId = null; // this player's own free play (if any) is now spent
+    log(state, `${player.name} played ${def.name} (Miracle).`);
+    if (checkWin(state, playerId)) return { won: true };
+    return resolveMiracleEffect(state, playerId, def.effect);
+  }
+
+  return { done: true };
 }
 
 // ============================================================
@@ -338,7 +371,7 @@ function resolveActionEffect(state, playerId, effect) {
       return { needsInput: "loaves_and_fish_choose", revealed, playable, done: false };
     }
     case "mustard_seed":
-      return { needsInput: "mustard_seed_extra", rewardSameSuit: effect.rewardSameSuit, done: false };
+      return { needsInput: "mustard_seed_extra", count: effect.count, done: false };
     case "big_fish":
       return { needsInput: "choose_suit_then_maybe_exchange", exchange: effect.exchange, done: false };
     case "big_storm":
@@ -354,7 +387,6 @@ function resolveActionEffect(state, playerId, effect) {
           player.hand.push(card);
           log(state, `${player.name} took the top discard card into hand.`);
         }
-        advanceTurn(state);
         return { done: true };
       }
       const belowTop = state.discardPile.slice(0, -1);
@@ -373,7 +405,6 @@ function resolveActionEffect(state, playerId, effect) {
     case "walk_on_water":
       return { needsInput: "walk_on_water_choose", pickNext: effect.pickNext, done: false };
     default:
-      advanceTurn(state);
       return { done: true };
   }
 }
@@ -388,25 +419,21 @@ function resolveMiracleEffect(state, playerId, effect) {
     case "lock_action_cards":
       state.actionLock = { active: true, ownerPlayerId: playerId };
       log(state, `${player.name} played Peace — no Action cards until their next turn.`);
-      endTurnWithFreePlay(state);
-      return { done: true };
+      return { done: true, miracle: true };
     case "overflow":
       return { needsInput: "overflow_discard", done: false };
     case "gain_blessing":
       player.blessings += effect.amount;
       log(state, `${player.name} gained ${effect.amount} Blessing from Favor.`);
-      endTurnWithFreePlay(state);
-      return { done: true };
+      return { done: true, miracle: true };
     case "renewed_strength":
       // "Play continues with the player after you" — this is exactly
       // normal turn advancement (the player after the current one),
       // so Strength doesn't need any special turn-order handling.
       log(state, `${player.name} played Strength.`);
-      endTurnWithFreePlay(state);
-      return { done: true };
+      return { done: true, miracle: true };
     default:
-      endTurnWithFreePlay(state);
-      return { done: true };
+      return { done: true, miracle: true };
   }
 }
 
@@ -420,29 +447,4 @@ function canPlayCardIgnoringTurn(card, state) {
   if (def.suit === state.activeSuit) return true;
   if (def.type === "number" && def.number === state.activeNumber) return true;
   return false;
-}
-
-// ---- Resolution continuations ------------------------------------
-// Called by the UI once it has collected the input a needsInput
-// descriptor asked for. Each ends by advancing the turn (unless the
-// card grants an additional play, in which case the UI loops back).
-
-function finishTurn(state) {
-  advanceTurn(state);
-}
-
-// Number-card-like resolution helper for when an effect causes a
-// card to be discarded and become the new active card (e.g. Loaves
-// & Fish auto-play, Five Stones blessing play, Walk on Water).
-function playCardDirectly(state, playerId, card) {
-  const def = cardDef(card);
-  state.discardPile.push(card);
-  if (def.type === "number") {
-    state.activeSuit = def.suit;
-    state.activeNumber = def.number;
-  } else if (def.type === "action") {
-    state.activeSuit = def.suit;
-    state.activeNumber = null;
-  }
-  log(state, `${findPlayer(state, playerId).name}'s ${def.name} was played.`);
 }
