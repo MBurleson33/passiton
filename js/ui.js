@@ -19,10 +19,15 @@ function showScreen(id) {
 }
 
 // ---- Setup screen ---------------------------------------------
+function getSelectedPlayerCount() {
+  const active = document.querySelector("#player-count-row .count-btn.active");
+  return active ? parseInt(active.dataset.count, 10) : 4;
+}
+
 function initSetupScreen() {
   const list = el("#player-name-list");
   list.innerHTML = "";
-  const count = parseInt(el("#player-count").value, 10);
+  const count = getSelectedPlayerCount();
   for (let i = 0; i < count; i++) {
     const row = document.createElement("div");
     row.className = "player-name-row";
@@ -31,7 +36,13 @@ function initSetupScreen() {
   }
 }
 
-el("#player-count").addEventListener("change", initSetupScreen);
+els("#player-count-row .count-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    els("#player-count-row .count-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    initSetupScreen();
+  });
+});
 
 el("#start-game-btn").addEventListener("click", () => {
   const inputs = els("#player-name-list input");
