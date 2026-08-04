@@ -31,13 +31,13 @@
   <div class="setup-wrap">
     <h2>Game Setup</h2>
     <label class="field-label">Number of players</label>
-    <select id="player-count">
-      <option value="2">2</option>
-      <option value="3">3</option>
-      <option value="4" selected>4</option>
-      <option value="5">5</option>
-      <option value="6">6</option>
-    </select>
+    <div class="player-count-row" id="player-count-row">
+      <button type="button" class="count-btn" data-count="2">2</button>
+      <button type="button" class="count-btn" data-count="3">3</button>
+      <button type="button" class="count-btn active" data-count="4">4</button>
+      <button type="button" class="count-btn" data-count="5">5</button>
+      <button type="button" class="count-btn" data-count="6">6</button>
+    </div>
     <div id="player-name-list"></div>
     <button class="btn btn-gold btn-lg" id="start-game-btn">Deal the Cards</button>
   </div>
