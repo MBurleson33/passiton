@@ -783,10 +783,19 @@ function modalLoavesAndFishChoose(result, playerId) {
 }
 
 function modalMustardSeedExtra(result, playerId) {
+  promptMustardSeedCard(playerId, result.count);
+}
+
+// Plays out Mustard Seed's "play N additional cards" one at a time.
+// Each card fully resolves its own effect (via playExtraCard) before
+// the next prompt appears — if that card is a Miracle, its own
+// effect takes precedence and ends the turn immediately, same rule
+// as everywhere else a pending follow-up can be superseded.
+function promptMustardSeedCard(playerId, remaining) {
+  if (remaining <= 0) { endTurnAndClose(); return; }
   const player = findPlayer(GAME, playerId);
-  const firstSuit = GAME.activeSuit;
   const anyLegal = player.hand.some(card => canPlayCard(card, GAME, playerId));
-  openModal(`<h3>Mustard Seed</h3><p>Play 1 additional card from your hand.</p>
+  openModal(`<h3>Mustard Seed</h3><p>Play ${remaining > 1 ? `${remaining} additional cards` : "1 additional card"} from your hand.</p>
     <div class="reveal-row" id="hand-slot"></div>
     ${anyLegal ? "" : `<p><em>No card in your hand can legally be played right now.</em></p>
     <button class="btn" id="mustard-skip">Continue</button>`}`);
@@ -797,19 +806,15 @@ function modalMustardSeedExtra(result, playerId) {
     if (legal) {
       c.classList.add("selectable");
       c.addEventListener("click", () => {
-        const def = cardDef(card);
         player.hand = player.hand.filter(h => h.uid !== card.uid);
-        if (result.rewardSameSuit && def.suit === firstSuit) {
-          player.blessings += 1;
-          log(GAME, `${player.name} gained 1 Blessing (same suit bonus).`);
-        }
+        pendingAfterCard = () => promptMustardSeedCard(playerId, remaining - 1);
         playExtraCard(playerId, card, r => handleEffectResult(r, playerId));
       });
     }
     slot.appendChild(c);
   });
   if (!anyLegal) {
-    el("#mustard-skip").addEventListener("click", () => endTurnAndClose());
+    el("#mustard-skip").addEventListener("click", () => promptMustardSeedCard(playerId, 0));
   }
 }
 
