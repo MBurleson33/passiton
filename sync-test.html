@@ -77,7 +77,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.17.0/firebase-app.js";
   import {
-    getFirestore, doc, setDoc, onSnapshot, getDoc, increment, serverTimestamp
+    getFirestore, doc, setDoc, onSnapshot, increment, serverTimestamp
   } from "https://www.gstatic.com/firebasejs/12.17.0/firebase-firestore.js";
 
   const statusEl = document.getElementById("status");
@@ -96,50 +96,68 @@
     statusEl.textContent = text;
   }
 
-  // Every device that opens this page joins the same fixed "room" —
-  // good enough for a first connectivity test. Real game rooms will
-  // use a generated room code instead of this fixed ID.
   const ROOM_ID = "sync-test-room";
+  let connected = false;
 
   if (!window.firebaseConfig || window.firebaseConfig.apiKey.startsWith("PASTE-")) {
     setStatus("error", "Missing config");
     log("js/firebase-config.js still has placeholder values — paste your real Firebase config in there first.");
   } else {
+    log("Initializing Firebase app…");
     try {
       const app = initializeApp(window.firebaseConfig);
+      log("Connecting to Firestore…");
       const db = getFirestore(app);
       const roomRef = doc(db, "games", ROOM_ID);
 
-      // Make sure the room document exists before we start listening.
-      const existing = await getDoc(roomRef);
-      if (!existing.exists()) {
-        await setDoc(roomRef, { counter: 0, lastUpdated: serverTimestamp() });
-        log("Created the test room document (first device to connect).");
-      }
-
-      // Live listener — this fires immediately with the current value,
-      // and again every time ANY device changes the document.
-      onSnapshot(roomRef, snap => {
+      // Attach the live listener FIRST rather than doing a one-time
+      // read-then-write — onSnapshot handles "document doesn't exist
+      // yet" as a normal (non-error) event, so nothing here blocks
+      // waiting on a prior round trip before we're listening.
+      onSnapshot(roomRef, async snap => {
+        if (!snap.exists()) {
+          log("Room document doesn't exist yet — creating it…");
+          try {
+            await setDoc(roomRef, { counter: 0, lastUpdated: serverTimestamp() });
+          } catch (err) {
+            setStatus("error", "Couldn't create room doc");
+            log(`Error creating room doc: ${err.code || ""} ${err.message}`);
+          }
+          return; // the setDoc above will trigger another snapshot with real data
+        }
+        connected = true;
         const data = snap.data();
-        if (!data) return;
         counterEl.textContent = data.counter;
         setStatus("connected", "Connected — live");
         btn.disabled = false;
         log(`Counter is now ${data.counter}`);
       }, err => {
         setStatus("error", "Connection error");
-        log(`Error: ${err.message}`);
+        log(`Error: ${err.code || ""} ${err.message}`);
       });
 
       btn.addEventListener("click", async () => {
         btn.disabled = true;
-        await setDoc(roomRef, { counter: increment(1), lastUpdated: serverTimestamp() }, { merge: true });
+        try {
+          await setDoc(roomRef, { counter: increment(1), lastUpdated: serverTimestamp() }, { merge: true });
+        } catch (err) {
+          log(`Error incrementing: ${err.code || ""} ${err.message}`);
+        }
         btn.disabled = false;
       });
 
+      // If nothing has happened after 7 seconds, the request is
+      // hanging rather than failing cleanly — that almost always
+      // means one of the causes below, not a code problem.
+      setTimeout(() => {
+        if (!connected) {
+          log("Still not connected after 7s. Most likely causes: (1) the Firestore DATABASE itself wasn't created yet in the console — Databases & Storage → Firestore Database → Create database (this is a different product from \"Realtime Database\", easy to mix up); (2) an ad blocker / privacy extension is blocking firestore.googleapis.com — try an incognito/private window with extensions off; (3) a restrictive network (school/work wifi) is blocking Google API traffic — try switching to cellular data.");
+        }
+      }, 7000);
+
     } catch (err) {
       setStatus("error", "Setup failed");
-      log(`Error: ${err.message}`);
+      log(`Error: ${err.code || ""} ${err.message}`);
     }
   }
 </script>
