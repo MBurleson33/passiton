@@ -79,7 +79,7 @@ const ACTION_CARDS = [
     artwork: "cards/Action - Living Water.jpg",
     playText: "Place 1 card from your hand on the bottom of the draw pile.",
     blessingText: "Place 1 card from your hand on the bottom of the draw pile. Play 1 additional card from your hand.",
-    blessingCost: 2,
+    blessingCost: 1,
     effect: { type: "living_water", extraPlay: false },
     blessingEffect: { type: "living_water", extraPlay: true }
   },
@@ -92,8 +92,8 @@ const ACTION_CARDS = [
     copies: 2,
     verse: "Matthew 14:13-21",
     artwork: "cards/Action - Loaves and Fish.jpg",
-    playText: "Reveal the top card of the draw pile. If able, play it immediately. Otherwise, return it to the draw pile.",
-    blessingText: "Reveal the top 3 cards from the draw pile. Play 1 if able, return the rest to the draw pile.",
+    playText: "Reveal the top card of the draw pile. Play it if able. Otherwise, return it to the draw pile.",
+    blessingText: "Reveal the top 3 cards from the draw pile. Play 1 if able, return the rest to the deck.",
     blessingCost: 1,
     effect: { type: "loaves_and_fish", count: 1 },
     blessingEffect: { type: "loaves_and_fish", count: 3 }
@@ -108,10 +108,10 @@ const ACTION_CARDS = [
     verse: "Matthew 13:31-32",
     artwork: "cards/Action - Mustard Seed.jpg",
     playText: "Play 1 additional card from your hand.",
-    blessingText: "Play 1 additional card from your hand. If both cards are the same suit, gain 1 Blessing.",
+    blessingText: "Play 2 additional cards from your hand.",
     blessingCost: 1,
-    effect: { type: "mustard_seed", rewardSameSuit: false },
-    blessingEffect: { type: "mustard_seed", rewardSameSuit: true }
+    effect: { type: "mustard_seed", count: 1 },
+    blessingEffect: { type: "mustard_seed", count: 2 }
   },
   {
     id: "the-big-fish",
