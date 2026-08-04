@@ -65,6 +65,18 @@
     background: linear-gradient(135deg, #ffc266, #ff9d3d); color: #201404; cursor: pointer;
   }
   #draw-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  #action-panel {
+    display: none; background: rgba(255,194,102,0.08); border: 1px solid rgba(255,194,102,0.3);
+    border-radius: 14px; padding: 16px; margin: 16px 0; text-align: center;
+  }
+  #action-panel p { font-size: 0.88rem; margin: 0 0 12px; }
+  #action-panel p.verse { font-style: italic; color: #9aa3ba; font-size: 0.8rem; }
+  #action-panel button {
+    font-family: inherit; font-size: 0.85rem; font-weight: 600;
+    padding: 10px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.25);
+    background: rgba(255,255,255,0.08); color: #f3f5fb; cursor: pointer; margin: 4px;
+  }
+  #action-panel button small { display: block; font-weight: 400; opacity: 0.75; margin-top: 3px; max-width: 200px; }
   #log {
     margin-top: 24px; text-align: left; background: rgba(255,255,255,0.05);
     border-radius: 12px; padding: 12px 16px; font-size: 0.78rem; color: #9aa3ba;
@@ -77,9 +89,10 @@
 
 <h1>Game State Sync Test</h1>
 <p class="sub">
-  Real game engine, real card data, synced live through Firestore.
-  <b>Number cards only for now</b> — Action/Miracle cards aren't wired
-  into this test page yet. Still a 2-player test.
+  Real game engine, real card data — <b>all 18 Action &amp; Miracle
+  cards now wired in</b>, synced live through Firestore. Still a
+  2-player test. (Tree Climber's reorder step is simplified — it
+  always returns cards in the order revealed.)
 </p>
 
 <div id="lobby">
@@ -96,6 +109,7 @@
   <div id="status" class="connecting">Connecting…</div>
   <div id="game-info">Waiting for game state…</div>
   <div id="hand-area"></div>
+  <div id="action-panel"></div>
   <button id="draw-btn" disabled>Draw a card</button>
 </div>
 
@@ -116,6 +130,7 @@
   const statusEl = document.getElementById("status");
   const infoEl = document.getElementById("game-info");
   const handEl = document.getElementById("hand-area");
+  const actionPanelEl = document.getElementById("action-panel");
   const drawBtn = document.getElementById("draw-btn");
   const logEl = document.getElementById("log");
 
@@ -129,8 +144,6 @@
     statusEl.textContent = text;
   }
 
-  // Short, easy-to-read/say-aloud codes — excludes 0/O/1/I/L, which
-  // get confused with each other when read out or typed on mobile.
   function generateRoomCode() {
     const chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
     let code = "";
@@ -144,17 +157,16 @@
     const app = initializeApp(window.firebaseConfig);
     const db = getFirestore(app);
 
-    // ---- Lobby wiring ----
     document.getElementById("host-btn").addEventListener("click", () => {
       const code = generateRoomCode();
       setUrl(code, 1);
-      startGame(code, 1, /* isHost */ true);
+      startGame(code, 1, true);
     });
     document.getElementById("join-btn").addEventListener("click", () => {
       const code = document.getElementById("join-code-input").value.trim().toUpperCase();
       if (!code) return;
       setUrl(code, 2);
-      startGame(code, 2, /* isHost */ false);
+      startGame(code, 2, false);
     });
 
     function setUrl(roomId, seat) {
@@ -164,8 +176,6 @@
       history.replaceState(null, "", url);
     }
 
-    // Reloading a page you already joined (or a direct link with
-    // ?room=&seat= already in it) skips straight past the lobby.
     const params = new URLSearchParams(location.search);
     const existingRoom = params.get("room");
     if (existingRoom) {
@@ -181,13 +191,59 @@
       const MY_PLAYER_INDEX = seat - 1;
       const roomRef = doc(db, "games", roomId);
       let currentState = null;
-      // Prevents firing a second local move before the first one's
-      // Firestore round-trip confirms.
       let actionPending = false;
+      let pendingAfterCard = null;
+
       function lockControls() {
         actionPending = true;
         drawBtn.disabled = true;
         handEl.querySelectorAll("button").forEach(b => { b.disabled = true; });
+      }
+
+      function showActionPanel(html) {
+        actionPanelEl.innerHTML = html;
+        actionPanelEl.style.display = "block";
+        handEl.style.display = "none";
+        drawBtn.style.display = "none";
+      }
+      function hideActionPanel() {
+        actionPanelEl.style.display = "none";
+        actionPanelEl.innerHTML = "";
+        handEl.style.display = "flex";
+        drawBtn.style.display = "block";
+      }
+
+      // Generic "pick one of these buttons" panel — covers most of
+      // the card/player selection flows below.
+      function pickButtons(description, items, labelFn, onPick, opts = {}) {
+        let html = `<p>${description}</p>`;
+        items.forEach((item, i) => { html += `<button class="pick-btn" data-i="${i}">${labelFn(item)}</button>`; });
+        if (opts.skipLabel) html += `<button id="pick-skip">${opts.skipLabel}</button>`;
+        showActionPanel(html);
+        actionPanelEl.querySelectorAll(".pick-btn").forEach((btn, i) => {
+          btn.addEventListener("click", () => onPick(items[i]));
+        });
+        if (opts.skipLabel) {
+          document.getElementById("pick-skip").addEventListener("click", opts.onSkip);
+        }
+      }
+      // Defined locally rather than reading cards.js's SUITS/SUIT_COLORS
+      // consts — const/let bindings from a classic <script> aren't
+      // reliably visible to a type="module" script the way function
+      // declarations are, so this sidesteps that entirely.
+      const TEST_SUITS = ["Faith", "Hope", "Love", "Service", "Prayer", "Word"];
+      const TEST_SUIT_COLORS = {
+        Faith: "#1d4e89", Hope: "#a68a1c", Love: "#a5253f",
+        Service: "#c1622d", Prayer: "#5b7a3a", Word: "#4b3f9e"
+      };
+
+      function pickSuit(description, onPick) {
+        let html = `<p>${description}</p>`;
+        TEST_SUITS.forEach((s, i) => { html += `<button class="pick-btn" data-i="${i}" style="border-color:${TEST_SUIT_COLORS[s]}">${s}</button>`; });
+        showActionPanel(html);
+        actionPanelEl.querySelectorAll(".pick-btn").forEach((btn, i) => {
+          btn.addEventListener("click", () => onPick(TEST_SUITS[i]));
+        });
       }
 
       async function pushState(state) {
@@ -200,6 +256,401 @@
         }
       }
 
+      function consumePendingAfterCard() {
+        if (pendingAfterCard) {
+          const fn = pendingAfterCard;
+          pendingAfterCard = null;
+          fn();
+          return true;
+        }
+        return false;
+      }
+      function finishTurn() {
+        if (consumePendingAfterCard()) return;
+        hideActionPanel();
+        advanceTurn(currentState);
+        pushState(currentState);
+      }
+      function finishMiracleTurn() {
+        if (pendingAfterCard) {
+          log("A pending choice was superseded by a Miracle's own effect.");
+          pendingAfterCard = null;
+        }
+        hideActionPanel();
+        endTurnWithFreePlay(currentState);
+        pushState(currentState);
+      }
+      function handleEffectResult(result) {
+        if (!result) return;
+        if (result.won) { pushState(currentState); return; }
+        if (result.error) { alert(result.error); return; }
+        if (!result.needsInput) {
+          if (result.miracle) finishMiracleTurn(); else finishTurn();
+          return;
+        }
+        routeNeedsInput(result);
+      }
+
+      // Plays a card that's already out of hand (a bonus "additional
+      // card", or a card revealed from the draw/discard pile) — same
+      // pattern as the real app's playExtraCard().
+      function playExtraCard(card, onResult) {
+        const def = cardDef(card);
+        const me = currentState.players[MY_PLAYER_INDEX];
+        if (def.type === "action" && def.blessingCost > 0 && me.blessings >= def.blessingCost) {
+          showActionPanel(`
+            <p><b>${def.name}</b></p><p class="verse">${def.verse}</p>
+            <button id="choice-play">Play<br><small>${def.playText}</small></button>
+            <button id="choice-blessing">Spend ${def.blessingCost} Blessing${def.blessingCost > 1 ? "s" : ""}<br><small>${def.blessingText}</small></button>
+          `);
+          document.getElementById("choice-play").onclick = () => onResult(playHandCardDirect(currentState, me.id, card, false));
+          document.getElementById("choice-blessing").onclick = () => onResult(playHandCardDirect(currentState, me.id, card, true));
+          return;
+        }
+        onResult(playHandCardDirect(currentState, me.id, card, false));
+      }
+
+      function routeNeedsInput(result) {
+        const handlers = {
+          five_stones_keep: panelFiveStonesKeep,
+          five_stones_play: panelFiveStonesPlay,
+          living_water_discard: panelLivingWaterDiscard,
+          loaves_and_fish_choose: panelLoavesAndFishChoose,
+          mustard_seed_extra: r => promptMustardSeedCard(r.count),
+          choose_suit_then_maybe_exchange: panelBigFish,
+          big_storm_choose_target: panelBigStorm,
+          empty_tomb_choose_card: panelEmptyTomb,
+          good_samaritan_give: panelGoodSamaritan,
+          good_shepherd_choose: panelGoodShepherdChoose,
+          tree_climber_reorder: panelTreeClimber,
+          two_coins_give: panelTwoCoins,
+          walk_on_water_choose: panelWalkOnWater,
+          choose_suit: panelChooseSuit,
+          redeemed_choose_card: panelRedeemedChoose,
+          overflow_discard: panelOverflow
+        };
+        const fn = handlers[result.needsInput];
+        if (fn) fn(result); else finishTurn();
+      }
+
+      // ---- Individual card panels ----
+
+      function panelFiveStonesKeep(result) {
+        const me = currentState.players[MY_PLAYER_INDEX];
+        if (result.revealed.length === 0) { finishTurn(); return; }
+        pickButtons("Five Stones — choose 1 card to keep. The rest return to the draw pile.",
+          result.revealed, c => cardDef(c).name, card => {
+            me.hand.push(card);
+            const rest = result.revealed.filter(r => r.uid !== card.uid);
+            currentState.drawPile.unshift(...shuffle(rest));
+            finishTurn();
+          });
+      }
+
+      function panelFiveStonesPlay(result) {
+        const me = currentState.players[MY_PLAYER_INDEX];
+        if (result.revealed.length === 0) { finishTurn(); return; }
+        if (result.playable.length === 0) {
+          showActionPanel(`
+            <p>Five Stones (Blessing) — none of the 5 revealed cards can be played. Add one to your hand, or return all five?</p>
+            <button id="fs-keep-one">Keep 1 in hand</button>
+            <button id="fs-return-all">Return all 5</button>
+          `);
+          document.getElementById("fs-keep-one").onclick = () => {
+            me.hand.push(result.revealed[0]);
+            currentState.drawPile.unshift(...shuffle(result.revealed.slice(1)));
+            finishTurn();
+          };
+          document.getElementById("fs-return-all").onclick = () => {
+            currentState.drawPile.unshift(...shuffle(result.revealed));
+            finishTurn();
+          };
+          return;
+        }
+        pickButtons("Five Stones (Blessing) — choose 1 legal card to play immediately.",
+          result.playable, c => cardDef(c).name, card => {
+            const rest = result.revealed.filter(r => r.uid !== card.uid);
+            currentState.drawPile.unshift(...shuffle(rest));
+            playExtraCard(card, handleEffectResult);
+          });
+      }
+
+      function panelLivingWaterDiscard(result) {
+        const me = currentState.players[MY_PLAYER_INDEX];
+        if (me.hand.length === 0) { finishTurn(); return; }
+        pickButtons("Living Water — choose 1 card from your hand to place on the bottom of the draw pile.",
+          me.hand.slice(), c => cardDef(c).name, card => {
+            me.hand = me.hand.filter(h => h.uid !== card.uid);
+            currentState.players[MY_PLAYER_INDEX] = me;
+            currentState.drawPile.push(card);
+            if (checkWin(currentState, me.id)) { pushState(currentState); return; }
+            if (result.extraPlay) promptOptionalPlay(() => finishTurn());
+            else finishTurn();
+          });
+      }
+
+      function panelLoavesAndFishChoose(result) {
+        if (result.playable.length === 0) {
+          currentState.drawPile.unshift(...shuffle(result.revealed));
+          finishTurn();
+          return;
+        }
+        pickButtons("Loaves & Fish — choose a legal card to play immediately.",
+          result.playable, c => cardDef(c).name, card => {
+            const rest = result.revealed.filter(r => r.uid !== card.uid);
+            currentState.drawPile.unshift(...shuffle(rest));
+            playExtraCard(card, handleEffectResult);
+          });
+      }
+
+      function promptMustardSeedCard(remaining) {
+        if (remaining <= 0) { finishTurn(); return; }
+        const me = currentState.players[MY_PLAYER_INDEX];
+        const legalCards = me.hand.filter(c => canPlayCard(c, currentState, me.id));
+        if (legalCards.length === 0) {
+          showActionPanel(`<p>Mustard Seed — no card in your hand can legally be played right now.</p><button id="ms-skip">Continue</button>`);
+          document.getElementById("ms-skip").onclick = () => promptMustardSeedCard(0);
+          return;
+        }
+        pickButtons(`Mustard Seed — play ${remaining > 1 ? remaining + " additional cards" : "1 additional card"} from your hand.`,
+          legalCards, c => cardDef(c).name, card => {
+            me.hand = me.hand.filter(h => h.uid !== card.uid);
+            pendingAfterCard = () => promptMustardSeedCard(remaining - 1);
+            playExtraCard(card, handleEffectResult);
+          });
+      }
+
+      function panelBigFish(result) {
+        pickSuit("The Big Fish — choose the active suit.", suit => {
+          currentState.activeSuit = suit;
+          if (result.exchange) doExchangeWithDrawPile();
+          else finishTurn();
+        });
+      }
+      function doExchangeWithDrawPile() {
+        const me = currentState.players[MY_PLAYER_INDEX];
+        if (currentState.drawPile.length === 0) { finishTurn(); return; }
+        pickButtons("Exchange — choose 1 card from your hand to swap with the top of the draw pile.",
+          me.hand.slice(), c => cardDef(c).name, card => {
+            const top = currentState.drawPile.shift();
+            me.hand = me.hand.filter(h => h.uid !== card.uid);
+            me.hand.push(top);
+            currentState.drawPile.unshift(card);
+            finishTurn();
+          });
+      }
+
+      function panelBigStorm(result) {
+        const me = currentState.players[MY_PLAYER_INDEX];
+        const others = currentState.players.filter(p => p.id !== me.id);
+        if (result.mode === "single") {
+          pickButtons("The Big Storm — choose another player. They may discard 1 card.",
+            others, p => p.name, target => promptDiscardOne(target.id, () => finishTurn()));
+        } else {
+          pickButtons("The Big Storm (Blessing) — choose another player. You and they may each discard 1 card.",
+            others, p => p.name, target => {
+              promptDiscardOne(me.id, () => promptDiscardOne(target.id, () => finishTurn()));
+            });
+        }
+      }
+      function promptDiscardOne(playerId, onDone) {
+        const p = currentState.players.find(pl => pl.id === playerId);
+        if (p.hand.length === 0) { onDone(); return; }
+        pickButtons(`${p.name}, discard a card (or skip).`,
+          p.hand.slice(), c => cardDef(c).name, card => {
+            p.hand = p.hand.filter(h => h.uid !== card.uid);
+            currentState.discardPile.push(card);
+            if (checkWin(currentState, p.id)) { pushState(currentState); return; }
+            onDone();
+          }, { skipLabel: "Skip", onSkip: onDone });
+      }
+
+      function panelEmptyTomb(result) {
+        const me = currentState.players[MY_PLAYER_INDEX];
+        const belowTop = currentState.discardPile.slice(0, -1);
+        if (belowTop.length === 0) { finishTurn(); return; }
+        pickButtons("The Empty Tomb — choose any 1 card from the discard pile.",
+          belowTop, c => cardDef(c).name, card => {
+            currentState.discardPile = currentState.discardPile.filter(d => d.uid !== card.uid);
+            if (result.mode === "take") {
+              me.hand.push(card);
+              if (checkWin(currentState, me.id)) { pushState(currentState); return; }
+              finishTurn();
+            } else {
+              playExtraCard(card, handleEffectResult);
+            }
+          });
+      }
+
+      function panelGoodSamaritan(result) {
+        const me = currentState.players[MY_PLAYER_INDEX];
+        const others = currentState.players.filter(p => p.id !== me.id);
+        pickButtons("The Good Samaritan — choose a player to give a card to.",
+          others, p => p.name, target => {
+            pickButtons(`Give a card to ${target.name}.`, me.hand.slice(), c => cardDef(c).name, card => {
+              me.hand = me.hand.filter(h => h.uid !== card.uid);
+              target.hand.push(card);
+              if (checkWin(currentState, me.id)) { pushState(currentState); return; }
+              if (result.mode === "normal") finishTurn();
+              else promptOptionalPlay(() => finishTurn());
+            });
+          });
+      }
+      function promptOptionalPlay(onDone) {
+        const me = currentState.players[MY_PLAYER_INDEX];
+        const legalCards = me.hand.filter(c => canPlayCard(c, currentState, me.id) || canPlayCardIgnoringTurn(c, currentState));
+        if (legalCards.length === 0) { onDone(); return; }
+        pickButtons(`${me.name} may play 1 card (or skip).`,
+          legalCards, c => cardDef(c).name, card => {
+            me.hand = me.hand.filter(h => h.uid !== card.uid);
+            playExtraCard(card, handleEffectResult);
+          }, { skipLabel: "Skip", onSkip: onDone });
+      }
+
+      function panelGoodShepherdChoose(result) {
+        const me = currentState.players[MY_PLAYER_INDEX];
+        if (result.revealed.length === 0) { finishTurn(); return; }
+        pickButtons("The Good Shepherd (Blessing) — choose 1 card to put into your hand.",
+          result.revealed, c => cardDef(c).name, card => {
+            currentState.discardPile = currentState.discardPile.filter(d => d.uid !== card.uid);
+            me.hand.push(card);
+            if (checkWin(currentState, me.id)) { pushState(currentState); return; }
+            finishTurn();
+          });
+      }
+
+      function panelTreeClimber(result) {
+        if (result.revealed.length === 0) { finishTurn(); return; }
+        showActionPanel(`
+          <p>Tree Climber — looked at: ${result.revealed.map(c => cardDef(c).name).join(", ")}.
+          (Reordering is simplified in this test — returned in the order revealed.)</p>
+          <button id="tc-confirm">Continue</button>
+        `);
+        document.getElementById("tc-confirm").onclick = () => {
+          currentState.drawPile.unshift(...result.revealed);
+          finishTurn();
+        };
+      }
+
+      function panelTwoCoins(result) {
+        const me = currentState.players[MY_PLAYER_INDEX];
+        const others = currentState.players.filter(p => p.id !== me.id);
+        pickButtons("Two Coins — choose a player to give a card to.",
+          others, p => p.name, target => {
+            pickButtons(`Give a card to ${target.name}.`, me.hand.slice(), c => cardDef(c).name, card => {
+              me.hand = me.hand.filter(h => h.uid !== card.uid);
+              target.hand.push(card);
+              if (checkWin(currentState, me.id)) { pushState(currentState); return; }
+              if (result.mode === "normal") {
+                me.blessings += 1;
+                finishTurn();
+              } else {
+                pickSuit("Choose the active suit.", suit => {
+                  currentState.activeSuit = suit;
+                  finishTurn();
+                });
+              }
+            });
+          });
+      }
+
+      function panelWalkOnWater(result) {
+        const me = currentState.players[MY_PLAYER_INDEX];
+        pickButtons("Walk On Water — play any 1 card from your hand, regardless of suit or number.",
+          me.hand.slice(), c => cardDef(c).name, card => {
+            me.hand = me.hand.filter(h => h.uid !== card.uid);
+            if (result.pickNext) pendingAfterCard = () => panelPickNextPlayer();
+            playExtraCard(card, handleEffectResult);
+          });
+      }
+      function panelPickNextPlayer() {
+        const me = currentState.players[MY_PLAYER_INDEX];
+        pickButtons("Walk On Water (Blessing) — pick who plays next.",
+          currentState.players, p => p.id === me.id ? `${p.name} (yourself)` : p.name, p => {
+            currentState.turnOverrideQueue.push(p.id);
+            finishTurn();
+          });
+      }
+
+      function panelChooseSuit(result) {
+        pickSuit("Wisdom — choose the active suit.", suit => {
+          currentState.activeSuit = suit;
+          currentState.activeNumber = null;
+          finishTurn(); // Wisdom's own exception — no free-play grant, see README
+        });
+      }
+
+      function panelRedeemedChoose(result) {
+        const me = currentState.players[MY_PLAYER_INDEX];
+        const belowTop = currentState.discardPile.slice(0, -1);
+        if (belowTop.length === 0) { finishMiracleTurn(); return; }
+        pickButtons("Redeemed — return 1 card from the discard pile to your hand.",
+          belowTop, c => cardDef(c).name, card => {
+            currentState.discardPile = currentState.discardPile.filter(d => d.uid !== card.uid);
+            me.hand.push(card);
+            finishMiracleTurn();
+          });
+      }
+
+      function panelOverflow(result) {
+        const me = currentState.players[MY_PLAYER_INDEX];
+        const selected = new Set();
+        function draw() {
+          let html = `<p>Overflow — select any number of cards to discard, then draw that many.</p>`;
+          me.hand.forEach((c, i) => {
+            const chosen = selected.has(c.uid);
+            html += `<button class="of-btn" data-i="${i}" style="${chosen ? "border-color:#ffc266;background:rgba(255,194,102,0.15);" : ""}">${cardDef(c).name}</button>`;
+          });
+          html += `<button id="of-confirm">Confirm (${selected.size} selected)</button>`;
+          showActionPanel(html);
+          actionPanelEl.querySelectorAll(".of-btn").forEach((btn, i) => {
+            btn.addEventListener("click", () => {
+              const uid = me.hand[i].uid;
+              if (selected.has(uid)) selected.delete(uid); else selected.add(uid);
+              draw();
+            });
+          });
+          document.getElementById("of-confirm").onclick = () => {
+            const toDiscard = me.hand.filter(c => selected.has(c.uid));
+            me.hand = me.hand.filter(c => !selected.has(c.uid));
+            currentState.discardPile.push(...toDiscard);
+            drawCard(currentState, me.id, toDiscard.length);
+            if (checkWin(currentState, me.id)) { pushState(currentState); return; }
+            finishMiracleTurn();
+          };
+        }
+        draw();
+      }
+
+      // ---- Top-level card click ----
+      function onCardClick(card) {
+        const me = currentState.players[MY_PLAYER_INDEX];
+        const def = cardDef(card);
+        if (def.type === "number") {
+          const result = playNumberCard(currentState, me.id, card.uid);
+          if (result.won) { pushState(currentState); return; }
+          finishTurn();
+          return;
+        }
+        if (def.type === "action") {
+          if (me.blessings >= def.blessingCost && def.blessingCost > 0) {
+            showActionPanel(`
+              <p><b>${def.name}</b></p><p class="verse">${def.verse}</p>
+              <button id="choice-play">Play<br><small>${def.playText}</small></button>
+              <button id="choice-blessing">Spend ${def.blessingCost} Blessing${def.blessingCost > 1 ? "s" : ""}<br><small>${def.blessingText}</small></button>
+            `);
+            document.getElementById("choice-play").onclick = () => handleEffectResult(playActionCard(currentState, me.id, card.uid, false));
+            document.getElementById("choice-blessing").onclick = () => handleEffectResult(playActionCard(currentState, me.id, card.uid, true));
+          } else {
+            handleEffectResult(playActionCard(currentState, me.id, card.uid, false));
+          }
+          return;
+        }
+        if (def.type === "miracle") {
+          handleEffectResult(playMiracleCard(currentState, me.id, card.uid));
+        }
+      }
+
       log(`Connecting to room ${roomId} as Seat ${seat}…`);
       onSnapshot(roomRef, snap => {
         if (snap.metadata.hasPendingWrites) return;
@@ -207,12 +658,6 @@
           if (seat === 1) {
             log("No game found — creating a new 2-player game as host (Seat 1)…");
             const fresh = createGameState(["Player 1", "Player 2"]);
-            // Render our own freshly-created game as soon as the write
-            // succeeds, rather than waiting for it to round-trip back
-            // through this same listener — that round-trip isn't
-            // reliably firing for the creator right after the doc
-            // first comes into existence. If the listener does also
-            // fire afterward, render() just runs again harmlessly.
             pushState(fresh).then(ok => {
               if (!ok) return;
               currentState = fresh;
@@ -236,6 +681,7 @@
 
       function render(state) {
         actionPending = false;
+        hideActionPanel();
 
         if (state.status === "finished") {
           const winner = state.players[state.players.findIndex(p => p.id === state.winnerId)];
@@ -253,17 +699,26 @@
         const current = state.players[state.currentPlayerIndex];
         const isMyTurn = current.id === me.id;
 
+        let extras = "";
+        if (state.actionLock.active) {
+          const owner = state.players.find(p => p.id === state.actionLock.ownerPlayerId);
+          extras += `<br><span style="color:#ff9db6">No Action cards until ${owner.name}'s next turn</span>`;
+        }
+        if (state.freePlayPlayerId === me.id) {
+          extras += `<br><span style="color:#6ef0e4">Free play — any card in your hand may be played</span>`;
+        }
+
         infoEl.innerHTML = `
           Turn <b>${state.turnCount}</b> — <b>${current.name}</b>'s turn${isMyTurn ? " (you)" : ""}<br>
           Active: <b>${state.activeSuit || "—"}</b> ${state.activeNumber ?? ""}<br>
           Draw pile: ${state.drawPile.length} · Your hand: ${me.hand.length} · Their hand: ${state.players[1 - MY_PLAYER_INDEX].hand.length}<br>
-          Blessings: ${me.blessings}
+          Blessings: ${me.blessings}${extras}
         `;
 
         handEl.innerHTML = "";
         me.hand.forEach(card => {
           const def = cardDef(card);
-          const legal = isMyTurn && canPlayCard(card, state, me.id) && def.type === "number";
+          const legal = canPlayCard(card, state, me.id);
           const btn = document.createElement("button");
           btn.className = "card-btn" + (legal ? " legal" : "");
           btn.textContent = def.type === "number" ? def.name : `${def.name} (${def.type})`;
@@ -271,15 +726,12 @@
           btn.addEventListener("click", () => {
             if (actionPending) return;
             lockControls();
-            const result = playNumberCard(state, me.id, card.uid);
-            if (!result.won) advanceTurn(state);
-            log(`You played ${def.name}.`);
-            pushState(state);
+            onCardClick(card);
           });
           handEl.appendChild(btn);
         });
 
-        const anyLegal = me.hand.some(c => isMyTurn && canPlayCard(c, state, me.id) && cardDef(c).type === "number");
+        const anyLegal = me.hand.some(c => canPlayCard(c, state, me.id));
         drawBtn.disabled = !isMyTurn || anyLegal;
       }
 
@@ -288,9 +740,8 @@
         lockControls();
         const me = currentState.players[MY_PLAYER_INDEX];
         drawCard(currentState, me.id, 1);
-        advanceTurn(currentState);
-        log("You drew a card.");
-        pushState(currentState);
+        currentState.freePlayPlayerId = null;
+        finishTurn();
       });
     }
   }
