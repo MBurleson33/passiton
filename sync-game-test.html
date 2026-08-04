@@ -193,8 +193,10 @@
       async function pushState(state) {
         try {
           await setDoc(roomRef, state);
+          return true;
         } catch (err) {
           log(`Error saving state: ${err.code || ""} ${err.message}`);
+          return false;
         }
       }
 
@@ -205,7 +207,19 @@
           if (seat === 1) {
             log("No game found — creating a new 2-player game as host (Seat 1)…");
             const fresh = createGameState(["Player 1", "Player 2"]);
-            pushState(fresh);
+            // Render our own freshly-created game as soon as the write
+            // succeeds, rather than waiting for it to round-trip back
+            // through this same listener — that round-trip isn't
+            // reliably firing for the creator right after the doc
+            // first comes into existence. If the listener does also
+            // fire afterward, render() just runs again harmlessly.
+            pushState(fresh).then(ok => {
+              if (!ok) return;
+              currentState = fresh;
+              setStatus("connected", "Connected — live");
+              log("Game created — you're in.");
+              render(fresh);
+            });
           } else {
             setStatus("connecting", "Waiting for the host to start the game…");
           }
