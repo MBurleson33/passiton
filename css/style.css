@@ -98,7 +98,10 @@ h1, h2, h3 {
   align-items: center;
   padding: env(safe-area-inset-top, 18px) 18px env(safe-area-inset-bottom, 18px);
   overflow-y: auto;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* legacy Edge/IE */
 }
+.screen::-webkit-scrollbar { display: none; } /* Chrome/Safari */
 .screen.active { display: flex; }
 
 /* ---- Icons ---- */
@@ -392,7 +395,12 @@ h1, h2, h3 {
 }
 .hand-header { display: flex; justify-content: space-between; font-size: 0.82rem; color: var(--text-dim); font-weight: 500; padding: 0 14px 8px; align-items: center; }
 .my-blessings { color: var(--accent-hi); font-weight: 700; display: inline-flex; align-items: center; }
-.hand-scroll { display: flex; gap: 0; overflow-x: auto; overflow-y: visible; padding: 14px 18px 14px; align-items: flex-end; justify-content: center; }
+.hand-scroll {
+  display: flex; gap: 0; overflow-x: auto; overflow-y: visible; padding: 14px 18px 22px;
+  align-items: flex-end; justify-content: center;
+  scrollbar-width: none; -ms-overflow-style: none;
+}
+.hand-scroll::-webkit-scrollbar { display: none; }
 #player-hand .card { margin-left: -24px; }
 #player-hand .card:first-child { margin-left: 0; }
 
