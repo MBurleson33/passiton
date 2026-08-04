@@ -114,7 +114,7 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.17.0/firebase-app.js";
   import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.17.0/firebase-auth.js";
   import {
-    getFirestore, doc, setDoc, updateDoc, getDoc, onSnapshot, arrayUnion
+    getFirestore, doc, setDoc, getDoc, onSnapshot, arrayUnion
   } from "https://www.gstatic.com/firebasejs/12.17.0/firebase-firestore.js";
 
   const lobbyEl = document.getElementById("lobby");
@@ -202,7 +202,7 @@
           await setDoc(publicRef, { playerUids: [myUid], createdAt: Date.now() });
         } else {
           log("Joining — adding myself to the room's player list…");
-          await updateDoc(publicRef, { playerUids: arrayUnion(myUid) });
+          await setDoc(publicRef, { playerUids: arrayUnion(myUid) }, { merge: true });
         }
         log("Writing my own private hand doc…");
         await setDoc(myHandRef, { secretCard: mySecret });
@@ -216,6 +216,7 @@
 
       let theirUid = null;
       onSnapshot(publicRef, snap => {
+        if (snap.metadata.hasPendingWrites) return;
         const data = snap.data();
         if (!data) return;
         const others = (data.playerUids || []).filter(u => u !== myUid);
