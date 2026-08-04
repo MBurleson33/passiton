@@ -47,14 +47,18 @@
 <section id="game-screen" class="screen">
   <header class="game-header">
     <div class="header-left">
-      <button class="icon-btn" id="quit-to-home-btn" title="Quit to home">⌂</button>
+      <button class="icon-btn" id="quit-to-home-btn" title="Quit to home">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11.5L12 4l8 7.5"/><path d="M6 10v9a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-9"/><path d="M10 20v-5h4v5"/></svg>
+      </button>
       <span class="turn-badge">Turn <span id="turn-count">1</span></span>
     </div>
     <div class="header-center">
-      <span class="current-player-tag">🎴 <span id="current-player-name"></span></span>
+      <span class="current-player-tag"><svg class="tag-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="13" height="17" rx="2.5" transform="rotate(-8 9.5 15.5)"/><rect x="8" y="3" width="13" height="17" rx="2.5"/></svg> <span id="current-player-name"></span></span>
     </div>
     <div class="header-right">
-      <button class="icon-btn" id="toggle-log-btn" title="Game log">📜</button>
+      <button class="icon-btn" id="toggle-log-btn" title="Game log">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="14" y2="17"/></svg>
+      </button>
     </div>
   </header>
 
@@ -86,7 +90,7 @@
   <footer class="hand-footer">
     <div class="hand-header">
       <span>Your hand</span>
-      <span class="my-blessings">✨ <span id="my-blessings">0</span> Blessings</span>
+      <span class="my-blessings"><svg class="sparkle-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.2 7.8L22 12l-7.8 2.2L12 22l-2.2-7.8L2 12l7.8-2.2z"/></svg> <span id="my-blessings">0</span> Blessings</span>
     </div>
     <div class="hand-scroll" id="player-hand"></div>
   </footer>
@@ -97,7 +101,7 @@
 <!-- RESULTS SCREEN -->
 <section id="results-screen" class="screen">
   <div class="results-wrap">
-    <h2>🎉 We have a winner!</h2>
+    <h2><svg class="trophy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4h8v6a4 4 0 0 1-8 0z"/><path d="M8 5H4v2a4 4 0 0 0 4 3.5"/><path d="M16 5h4v2a4 4 0 0 1-4 3.5"/><path d="M10 14v3M14 14v3M8 21h8M9 21v-2.5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1V21"/></svg> We have a winner!</h2>
     <div class="pass-name" id="winner-name">—</div>
     <div class="results-stats">
       <div><span id="result-turns">0</span><label>Turns played</label></div>
