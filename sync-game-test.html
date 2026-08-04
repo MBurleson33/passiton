@@ -110,6 +110,17 @@
       const db = getFirestore(app);
       const roomRef = doc(db, "games", ROOM_ID);
       let currentState = null;
+      // Prevents firing a second local move before the first one's
+      // Firestore round-trip confirms — without this, a fast second
+      // click can advance the turn twice from the same device before
+      // the UI catches up (exactly what caused the "drew twice in a
+      // row" issue).
+      let actionPending = false;
+      function lockControls() {
+        actionPending = true;
+        drawBtn.disabled = true;
+        handEl.querySelectorAll("button").forEach(b => { b.disabled = true; });
+      }
 
       async function pushState(state) {
         try {
@@ -141,6 +152,10 @@
       });
 
       function render(state) {
+        // Every call here comes from a server-confirmed snapshot, so
+        // it's always safe to accept new input again at this point.
+        actionPending = false;
+
         if (state.status === "finished") {
           const winner = state.players[state.players.findIndex(p => p.id === state.winnerId)];
           infoEl.innerHTML = `<b>${winner.name} wins!</b> (Turn ${state.turnCount})`;
@@ -173,6 +188,8 @@
           btn.textContent = def.type === "number" ? def.name : `${def.name} (${def.type})`;
           btn.disabled = !legal;
           btn.addEventListener("click", () => {
+            if (actionPending) return;
+            lockControls();
             const result = playNumberCard(state, me.id, card.uid);
             if (!result.won) advanceTurn(state);
             log(`You played ${def.name}.`);
@@ -186,7 +203,8 @@
       }
 
       drawBtn.addEventListener("click", () => {
-        if (!currentState) return;
+        if (!currentState || actionPending) return;
+        lockControls();
         const me = currentState.players[MY_PLAYER_INDEX];
         drawCard(currentState, me.id, 1);
         advanceTurn(currentState);
