@@ -5,7 +5,7 @@
 // Bump CACHE_NAME whenever you change any cached file so
 // returning players get the update instead of a stale cache.
 // ============================================================
-const CACHE_NAME = "pass-it-on-v13";
+const CACHE_NAME = "pass-it-on-v14";
 
 const ASSETS = [
   "./",
