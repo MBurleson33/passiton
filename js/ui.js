@@ -754,10 +754,10 @@ function modalLivingWaterDiscard(result, playerId) {
       player.hand = player.hand.filter(h => h.uid !== card.uid);
       GAME.drawPile.push(card);
       log(GAME, `${player.name} placed a card on the bottom of the draw pile.`);
+      if (checkWin(GAME, playerId)) { persist(); closeModal(); renderPassScreen(); return; }
       if (result.extraPlay) {
-        closeModal();
-        renderGameScreen();
-        alert("Play 1 additional card from your hand now.");
+        persist();
+        promptOptionalPlay(playerId, () => endTurnAndClose());
       } else {
         endTurnAndClose();
       }
@@ -918,6 +918,7 @@ function promptDiscardOne(playerId, onDone) {
       player.hand = player.hand.filter(h => h.uid !== card.uid);
       GAME.discardPile.push(card);
       log(GAME, `${player.name} discarded a card (The Big Storm).`);
+      if (checkWin(GAME, playerId)) { persist(); closeModal(); renderPassScreen(); return; }
       onDone();
     });
     slot.appendChild(c);
@@ -988,6 +989,7 @@ function modalGoodSamaritan(result, playerId) {
           player.hand = player.hand.filter(h => h.uid !== card.uid);
           op.hand.push(card);
           log(GAME, `${player.name} gave a card to ${op.name} (The Good Samaritan).`);
+          if (checkWin(GAME, playerId)) { persist(); closeModal(); renderPassScreen(); return; }
           if (result.mode === "normal") {
             endTurnAndClose();
           } else {
@@ -1098,7 +1100,7 @@ function modalTwoCoins(result, playerId) {
           player.hand = player.hand.filter(h => h.uid !== card.uid);
           op.hand.push(card);
           log(GAME, `${player.name} gave a card to ${op.name} (Two Coins).`);
-          if (checkWin(GAME, op.id)) { persist(); closeModal(); renderPassScreen(); return; }
+          if (checkWin(GAME, playerId)) { persist(); closeModal(); renderPassScreen(); return; }
           if (result.mode === "normal") {
             player.blessings += 1;
             log(GAME, `${player.name} gained 1 Blessing.`);
@@ -1219,6 +1221,7 @@ function modalOverflow(result, playerId) {
     GAME.discardPile.push(...toDiscard);
     drawCard(GAME, playerId, toDiscard.length);
     log(GAME, `${player.name} discarded ${toDiscard.length} card(s) and drew ${toDiscard.length} (Overflow).`);
+    if (checkWin(GAME, playerId)) { persist(); closeModal(); renderPassScreen(); return; }
     endMiracleTurnAndClose();
   });
 }
