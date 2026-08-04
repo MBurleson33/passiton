@@ -127,13 +127,13 @@ function renderGameScreen() {
   el("#action-lock-badge").style.display = GAME.actionLock.active ? "inline-block" : "none";
   if (GAME.actionLock.active) {
     const owner = findPlayer(GAME, GAME.actionLock.ownerPlayerId);
-    el("#action-lock-badge").textContent = `🕊 Peace: no Action cards until ${owner.name}'s next turn`;
+    el("#action-lock-badge").innerHTML = `<svg class="badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><line x1="5.5" y1="18.5" x2="18.5" y2="5.5"/></svg> Peace: no Action cards until ${owner.name}'s next turn`;
   }
 
   const freePlay = GAME.freePlayPlayerId === p.id;
   el("#free-play-badge").style.display = freePlay ? "inline-block" : "none";
   if (freePlay) {
-    el("#free-play-badge").textContent = "✨ Free play — any card in your hand may be played";
+    el("#free-play-badge").innerHTML = `<svg class="badge-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.2 7.8L22 12l-7.8 2.2L12 22l-2.2-7.8L2 12l7.8-2.2z"/></svg> Free play — any card in your hand may be played`;
   }
 
   // Discard pile top card — large "hero" size as the table's focal point
@@ -171,7 +171,7 @@ function renderGameScreen() {
     badge.innerHTML = `<div class="opp-avatar">${initial}</div>
       <div class="opp-info">
         <div class="opp-name">${op.name}</div>
-        <div class="opp-meta"><span class="opp-hand">🂠 ${op.hand.length}</span><span class="opp-blessings">✨ ${op.blessings}</span></div>
+        <div class="opp-meta"><span class="opp-hand"><svg class="mini-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="4" y="5" width="12" height="16" rx="2"/><rect x="10" y="3" width="12" height="16" rx="2" fill="var(--surface)"/></svg>${op.hand.length}</span><span class="opp-blessings"><svg class="mini-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.2 7.8L22 12l-7.8 2.2L12 22l-2.2-7.8L2 12l7.8-2.2z"/></svg>${op.blessings}</span></div>
       </div>`;
     seats.appendChild(badge);
   });
