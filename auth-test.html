@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pass It On — Auth Test</title>
+<style>
+  body {
+    font-family: -apple-system, system-ui, sans-serif;
+    background: #0a0d16;
+    color: #f3f5fb;
+    max-width: 480px;
+    margin: 40px auto;
+    padding: 0 20px;
+    text-align: center;
+  }
+  h1 { font-size: 1.3rem; }
+  p.sub { color: #9aa3ba; font-size: 0.88rem; }
+  #status {
+    display: inline-block;
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    margin: 14px 0;
+  }
+  #status.connecting { background: rgba(246,168,33,0.15); color: #ffc266; }
+  #status.connected { background: rgba(41,214,200,0.15); color: #6ef0e4; }
+  #status.error { background: rgba(228,72,122,0.15); color: #ff9db6; }
+  #uid-box {
+    background: rgba(255,255,255,0.05); border-radius: 14px; padding: 18px;
+    margin: 20px 0; word-break: break-all; font-family: monospace; font-size: 0.95rem;
+  }
+  #uid-box .label { display: block; font-family: -apple-system, system-ui, sans-serif; color: #9aa3ba; font-size: 0.78rem; margin-bottom: 6px; }
+  #log {
+    margin-top: 24px; text-align: left; background: rgba(255,255,255,0.05);
+    border-radius: 12px; padding: 12px 16px; font-size: 0.78rem; color: #9aa3ba;
+    max-height: 180px; overflow-y: auto;
+  }
+  #log div { padding: 2px 0; }
+</style>
+</head>
+<body>
+
+<h1>Firebase Auth Test</h1>
+<p class="sub">
+  Reload this page a few times — the ID below should stay <em>exactly
+  the same</em> each time, on this device. That's the whole test: a
+  stable identity we can later use to say "only this person gets
+  their own cards back."
+</p>
+
+<div id="status" class="connecting">Connecting…</div>
+
+<div id="uid-box">
+  <span class="label">Your device's ID</span>
+  <span id="uid-display">—</span>
+</div>
+
+<div id="log"></div>
+
+<script src="js/firebase-config.js"></script>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.17.0/firebase-app.js";
+  import {
+    getAuth, signInAnonymously, onAuthStateChanged
+  } from "https://www.gstatic.com/firebasejs/12.17.0/firebase-auth.js";
+
+  const statusEl = document.getElementById("status");
+  const uidDisplay = document.getElementById("uid-display");
+  const logEl = document.getElementById("log");
+
+  function log(msg) {
+    const line = document.createElement("div");
+    line.textContent = `${new Date().toLocaleTimeString()} — ${msg}`;
+    logEl.prepend(line);
+  }
+  function setStatus(state, text) {
+    statusEl.className = state;
+    statusEl.textContent = text;
+  }
+
+  if (!window.firebaseConfig || window.firebaseConfig.apiKey.startsWith("PASTE-")) {
+    setStatus("error", "Missing config");
+    log("js/firebase-config.js still has placeholder values.");
+  } else {
+    try {
+      const app = initializeApp(window.firebaseConfig);
+      const auth = getAuth(app);
+
+      log("Requesting anonymous sign-in…");
+      onAuthStateChanged(auth, user => {
+        if (user) {
+          setStatus("connected", "Signed in");
+          uidDisplay.textContent = user.uid;
+          log(`Signed in. UID: ${user.uid}`);
+        } else {
+          setStatus("connecting", "Not signed in yet…");
+        }
+      });
+
+      signInAnonymously(auth).catch(err => {
+        setStatus("error", "Sign-in failed");
+        log(`Error: ${err.code || ""} ${err.message}`);
+        if (err.code === "auth/admin-restricted-operation" || err.code === "auth/operation-not-allowed") {
+          log('This almost always means Anonymous sign-in isn\'t turned on yet: Firebase console → Build → Authentication → Sign-in method → enable "Anonymous".');
+        }
+      });
+
+    } catch (err) {
+      setStatus("error", "Setup failed");
+      log(`Error: ${err.code || ""} ${err.message}`);
+    }
+  }
+</script>
+</body>
+</html>
