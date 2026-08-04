@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Pass It On — Game State Sync Test</title>
+<title>Pass It On — Hidden-Hands Game Sync Test</title>
 <style>
   body {
     font-family: -apple-system, system-ui, sans-serif;
@@ -16,7 +16,6 @@
   h1 { font-size: 1.3rem; text-align: center; }
   p.sub { color: #9aa3ba; font-size: 0.85rem; text-align: center; }
 
-  /* ---- Lobby ---- */
   #lobby { text-align: center; margin-top: 20px; }
   #lobby .btn-primary, #lobby .btn-secondary {
     display: block; width: 100%; font-size: 1.05rem; font-weight: 700;
@@ -37,7 +36,6 @@
   }
   #room-code-banner b { font-size: 1.3rem; letter-spacing: 0.15em; color: #ffc266; }
 
-  /* ---- Game ---- */
   #status {
     display: block; text-align: center;
     padding: 6px 14px; border-radius: 999px; font-size: 0.8rem; font-weight: 600;
@@ -77,6 +75,10 @@
     background: rgba(255,255,255,0.08); color: #f3f5fb; cursor: pointer; margin: 4px;
   }
   #action-panel button small { display: block; font-weight: 400; opacity: 0.75; margin-top: 3px; max-width: 200px; }
+  #incoming-request {
+    display: none; background: rgba(228,72,122,0.1); border: 1px solid rgba(228,72,122,0.4);
+    border-radius: 14px; padding: 16px; margin: 16px 0; text-align: center;
+  }
   #log {
     margin-top: 24px; text-align: left; background: rgba(255,255,255,0.05);
     border-radius: 12px; padding: 12px 16px; font-size: 0.78rem; color: #9aa3ba;
@@ -87,12 +89,14 @@
 </head>
 <body>
 
-<h1>Game State Sync Test</h1>
+<h1>Hidden-Hands Game Sync Test</h1>
 <p class="sub">
-  Real game engine, real card data — <b>all 18 Action &amp; Miracle
-  cards now wired in</b>, synced live through Firestore. Still a
-  2-player test. (Tree Climber's reorder step is simplified — it
-  always returns cards in the order revealed.)
+  All 18 cards, but now with real hidden hands — Firestore Security
+  Rules stop your device from ever reading the other player's cards,
+  no Cloud Function needed. <b>The Big Storm is simplified</b>: it
+  discards a random card from the target's hand instead of letting
+  them choose, since letting them choose would require a live
+  cross-device handshake this pass doesn't build yet.
 </p>
 
 <div id="lobby">
@@ -110,6 +114,7 @@
   <div id="game-info">Waiting for game state…</div>
   <div id="hand-area"></div>
   <div id="action-panel"></div>
+  <div id="incoming-request"></div>
   <button id="draw-btn" disabled>Draw a card</button>
 </div>
 
@@ -120,8 +125,9 @@
 <script src="js/firebase-config.js"></script>
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.17.0/firebase-app.js";
+  import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.17.0/firebase-auth.js";
   import {
-    getFirestore, doc, setDoc, onSnapshot
+    getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, arrayUnion
   } from "https://www.gstatic.com/firebasejs/12.17.0/firebase-firestore.js";
 
   const lobbyEl = document.getElementById("lobby");
@@ -131,6 +137,7 @@
   const infoEl = document.getElementById("game-info");
   const handEl = document.getElementById("hand-area");
   const actionPanelEl = document.getElementById("action-panel");
+  const incomingEl = document.getElementById("incoming-request");
   const drawBtn = document.getElementById("draw-btn");
   const logEl = document.getElementById("log");
 
@@ -143,7 +150,6 @@
     statusEl.className = state;
     statusEl.textContent = text;
   }
-
   function generateRoomCode() {
     const chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
     let code = "";
@@ -152,54 +158,157 @@
   }
 
   if (!window.firebaseConfig || window.firebaseConfig.apiKey.startsWith("PASTE-")) {
-    lobbyEl.innerHTML = `<p style="color:#ff9db6">js/firebase-config.js still has placeholder values — paste your real Firebase config in there first.</p>`;
+    lobbyEl.innerHTML = `<p style="color:#ff9db6">js/firebase-config.js still has placeholder values.</p>`;
   } else {
     const app = initializeApp(window.firebaseConfig);
     const db = getFirestore(app);
+    const auth = getAuth(app);
+    let myUid = null;
 
-    document.getElementById("host-btn").addEventListener("click", () => {
-      const code = generateRoomCode();
-      setUrl(code, 1);
-      startGame(code, 1, true);
+    log("Signing in anonymously…");
+    onAuthStateChanged(auth, user => {
+      if (!user) return;
+      myUid = user.uid;
+      log(`Signed in as ${myUid.slice(0, 8)}…`);
+      wireLobby();
     });
-    document.getElementById("join-btn").addEventListener("click", () => {
-      const code = document.getElementById("join-code-input").value.trim().toUpperCase();
-      if (!code) return;
-      setUrl(code, 2);
-      startGame(code, 2, false);
-    });
+    signInAnonymously(auth).catch(err => log(`Auth error: ${err.code || ""} ${err.message}`));
 
-    function setUrl(roomId, seat) {
+    function wireLobby() {
+      document.getElementById("host-btn").addEventListener("click", () => {
+        const code = generateRoomCode();
+        setUrl(code);
+        startGame(code, true);
+      });
+      document.getElementById("join-btn").addEventListener("click", () => {
+        const code = document.getElementById("join-code-input").value.trim().toUpperCase();
+        if (!code) return;
+        setUrl(code);
+        startGame(code, false);
+      });
+      const params = new URLSearchParams(location.search);
+      const existingRoom = params.get("room");
+      if (existingRoom) startGame(existingRoom, false);
+    }
+    function setUrl(roomId) {
       const url = new URL(location.href);
       url.searchParams.set("room", roomId);
-      url.searchParams.set("seat", seat);
       history.replaceState(null, "", url);
     }
 
-    const params = new URLSearchParams(location.search);
-    const existingRoom = params.get("room");
-    if (existingRoom) {
-      startGame(existingRoom, parseInt(params.get("seat") || "1", 10), false);
-    }
-
-    function startGame(roomId, seat, isHost) {
+    async function startGame(roomId, isHost) {
       lobbyEl.style.display = "none";
       gameEl.style.display = "block";
-      document.title = `Pass It On — Room ${roomId} — Seat ${seat}`;
       roomBanner.innerHTML = `Room code: <b>${roomId}</b>${isHost ? " — share this with the other player" : ""}`;
 
-      const MY_PLAYER_INDEX = seat - 1;
-      const roomRef = doc(db, "games", roomId);
-      let currentState = null;
+      const publicRef = doc(db, "games", roomId);
+      const myHandRef = doc(db, "games", roomId, "hands", myUid);
+      const handRef = uid => doc(db, "games", roomId, "hands", uid);
+
+      let MY_PLAYER_INDEX = -1;
+      let latestPublic = null;
+      let latestMyHand = null;
       let actionPending = false;
       let pendingAfterCard = null;
+
+      // ---- Bootstrap: create room, or join and (if needed) deal ----
+      try {
+        if (isHost) {
+          log("Creating room…");
+          await setDoc(publicRef, {
+            status: "waiting",
+            seats: [myUid, null],
+            playerUids: [myUid],
+            playerNames: ["Player 1", "Player 2"]
+          });
+        } else {
+          log("Joining…");
+          const snap = await getDoc(publicRef);
+          if (!snap.exists()) throw new Error("Room not found — check the code.");
+          const data = snap.data();
+          if (data.seats && data.seats[1] && data.seats[1] !== myUid) {
+            throw new Error("This room already has 2 players.");
+          }
+          await setDoc(publicRef, { seats: [data.seats[0], myUid], playerUids: arrayUnion(myUid) }, { merge: true });
+
+          if (data.status === "waiting") {
+            log("Both players present — dealing the game…");
+            const fresh = createGameState(["Player 1", "Player 2"]);
+            const seat0Hand = fresh.players[0].hand;
+            const seat1Hand = fresh.players[1].hand;
+            await setDoc(handRef(data.seats[0]), { hand: seat0Hand });
+            await setDoc(myHandRef, { hand: seat1Hand });
+            const { players, ...publicRest } = fresh;
+            const publicPlayers = players.map((p, i) => ({
+              id: p.id, name: p.name, blessings: p.blessings, connected: true, handCount: p.hand.length
+            }));
+            await setDoc(publicRef, {
+              ...publicRest,
+              players: publicPlayers,
+              status: "playing",
+              seats: [data.seats[0], myUid],
+              playerUids: arrayUnion(myUid)
+            }, { merge: true });
+            log("Dealt — game started.");
+          }
+        }
+      } catch (err) {
+        setStatus("error", "Setup failed");
+        log(`Error: ${err.code || err.message}`);
+        return;
+      }
+
+      // ---- Merge public + my private hand into an engine-shaped state ----
+      function buildWorkingState() {
+        if (!latestPublic || latestPublic.status === "waiting") return null;
+        const seats = latestPublic.seats;
+        MY_PLAYER_INDEX = seats.indexOf(myUid);
+        if (MY_PLAYER_INDEX === -1) return null;
+        const { players: publicPlayers, ...rest } = latestPublic;
+        const state = JSON.parse(JSON.stringify(rest));
+        state.players = publicPlayers.map((p, i) => {
+          if (i === MY_PLAYER_INDEX) {
+            return { id: p.id, name: p.name, blessings: p.blessings, connected: p.connected, hand: (latestMyHand || []).slice() };
+          }
+          // Placeholder cards for the other player — length matches
+          // their real hand count, but contents are never read for
+          // any real card logic (only .length matters anywhere in
+          // the engine except for the player whose turn it actually
+          // is resolving their own effect).
+          const placeholder = [];
+          for (let k = 0; k < p.handCount; k++) placeholder.push({ uid: `placeholder-${i}-${k}`, defId: "faith-1" });
+          return { id: p.id, name: p.name, blessings: p.blessings, connected: p.connected, hand: placeholder };
+        });
+        return state;
+      }
+
+      // ---- Persisting a move: my hand (full), public fields (full), never their hand ----
+      async function pushSplitState(state) {
+        try {
+          await setDoc(myHandRef, { hand: state.players[MY_PLAYER_INDEX].hand });
+          const { players, ...rest } = state;
+          const publicPlayers = players.map(p => ({
+            id: p.id, name: p.name, blessings: p.blessings, connected: p.connected, handCount: p.hand.length
+          }));
+          await setDoc(publicRef, { ...rest, players: publicPlayers, seats: latestPublic.seats, playerUids: latestPublic.playerUids }, { merge: false });
+          return true;
+        } catch (err) {
+          log(`Error saving state: ${err.code || ""} ${err.message}`);
+          return false;
+        }
+      }
+      // Give a card to the OTHER player — the only write ever made to
+      // someone else's hand doc, and it's additive-only (arrayUnion),
+      // so it never needs to read (and can't corrupt) their real data.
+      async function giveCardTo(targetUid, card) {
+        await updateDoc(handRef(targetUid), { hand: arrayUnion(card) });
+      }
 
       function lockControls() {
         actionPending = true;
         drawBtn.disabled = true;
         handEl.querySelectorAll("button").forEach(b => { b.disabled = true; });
       }
-
       function showActionPanel(html) {
         actionPanelEl.innerHTML = html;
         actionPanelEl.style.display = "block";
@@ -212,9 +321,6 @@
         handEl.style.display = "flex";
         drawBtn.style.display = "block";
       }
-
-      // Generic "pick one of these buttons" panel — covers most of
-      // the card/player selection flows below.
       function pickButtons(description, items, labelFn, onPick, opts = {}) {
         let html = `<p>${description}</p>`;
         items.forEach((item, i) => { html += `<button class="pick-btn" data-i="${i}">${labelFn(item)}</button>`; });
@@ -223,20 +329,10 @@
         actionPanelEl.querySelectorAll(".pick-btn").forEach((btn, i) => {
           btn.addEventListener("click", () => onPick(items[i]));
         });
-        if (opts.skipLabel) {
-          document.getElementById("pick-skip").addEventListener("click", opts.onSkip);
-        }
+        if (opts.skipLabel) document.getElementById("pick-skip").addEventListener("click", opts.onSkip);
       }
-      // Defined locally rather than reading cards.js's SUITS/SUIT_COLORS
-      // consts — const/let bindings from a classic <script> aren't
-      // reliably visible to a type="module" script the way function
-      // declarations are, so this sidesteps that entirely.
       const TEST_SUITS = ["Faith", "Hope", "Love", "Service", "Prayer", "Word"];
-      const TEST_SUIT_COLORS = {
-        Faith: "#1d4e89", Hope: "#a68a1c", Love: "#a5253f",
-        Service: "#c1622d", Prayer: "#5b7a3a", Word: "#4b3f9e"
-      };
-
+      const TEST_SUIT_COLORS = { Faith: "#1d4e89", Hope: "#a68a1c", Love: "#a5253f", Service: "#c1622d", Prayer: "#5b7a3a", Word: "#4b3f9e" };
       function pickSuit(description, onPick) {
         let html = `<p>${description}</p>`;
         TEST_SUITS.forEach((s, i) => { html += `<button class="pick-btn" data-i="${i}" style="border-color:${TEST_SUIT_COLORS[s]}">${s}</button>`; });
@@ -246,43 +342,26 @@
         });
       }
 
-      async function pushState(state) {
-        try {
-          await setDoc(roomRef, state);
-          return true;
-        } catch (err) {
-          log(`Error saving state: ${err.code || ""} ${err.message}`);
-          return false;
-        }
-      }
-
       function consumePendingAfterCard() {
-        if (pendingAfterCard) {
-          const fn = pendingAfterCard;
-          pendingAfterCard = null;
-          fn();
-          return true;
-        }
+        if (pendingAfterCard) { const fn = pendingAfterCard; pendingAfterCard = null; fn(); return true; }
         return false;
       }
+      let currentState = null;
       function finishTurn() {
         if (consumePendingAfterCard()) return;
         hideActionPanel();
         advanceTurn(currentState);
-        pushState(currentState);
+        pushSplitState(currentState);
       }
       function finishMiracleTurn() {
-        if (pendingAfterCard) {
-          log("A pending choice was superseded by a Miracle's own effect.");
-          pendingAfterCard = null;
-        }
+        if (pendingAfterCard) { log("A pending choice was superseded by a Miracle's own effect."); pendingAfterCard = null; }
         hideActionPanel();
         endTurnWithFreePlay(currentState);
-        pushState(currentState);
+        pushSplitState(currentState);
       }
       function handleEffectResult(result) {
         if (!result) return;
-        if (result.won) { pushState(currentState); return; }
+        if (result.won) { pushSplitState(currentState); return; }
         if (result.error) { alert(result.error); return; }
         if (!result.needsInput) {
           if (result.miracle) finishMiracleTurn(); else finishTurn();
@@ -290,10 +369,6 @@
         }
         routeNeedsInput(result);
       }
-
-      // Plays a card that's already out of hand (a bonus "additional
-      // card", or a card revealed from the draw/discard pile) — same
-      // pattern as the real app's playExtraCard().
       function playExtraCard(card, onResult) {
         const def = cardDef(card);
         const me = currentState.players[MY_PLAYER_INDEX];
@@ -333,8 +408,9 @@
         if (fn) fn(result); else finishTurn();
       }
 
-      // ---- Individual card panels ----
-
+      // ---- Panels unchanged from the single-doc version — these only
+      // ever touch my own hand, the draw pile, or the discard pile,
+      // none of which need special handling under hidden hands. ----
       function panelFiveStonesKeep(result) {
         const me = currentState.players[MY_PLAYER_INDEX];
         if (result.revealed.length === 0) { finishTurn(); return; }
@@ -346,7 +422,6 @@
             finishTurn();
           });
       }
-
       function panelFiveStonesPlay(result) {
         const me = currentState.players[MY_PLAYER_INDEX];
         if (result.revealed.length === 0) { finishTurn(); return; }
@@ -374,21 +449,18 @@
             playExtraCard(card, handleEffectResult);
           });
       }
-
       function panelLivingWaterDiscard(result) {
         const me = currentState.players[MY_PLAYER_INDEX];
         if (me.hand.length === 0) { finishTurn(); return; }
         pickButtons("Living Water — choose 1 card from your hand to place on the bottom of the draw pile.",
           me.hand.slice(), c => cardDef(c).name, card => {
             me.hand = me.hand.filter(h => h.uid !== card.uid);
-            currentState.players[MY_PLAYER_INDEX] = me;
             currentState.drawPile.push(card);
-            if (checkWin(currentState, me.id)) { pushState(currentState); return; }
+            if (checkWin(currentState, me.id)) { pushSplitState(currentState); return; }
             if (result.extraPlay) promptOptionalPlay(() => finishTurn());
             else finishTurn();
           });
       }
-
       function panelLoavesAndFishChoose(result) {
         if (result.playable.length === 0) {
           currentState.drawPile.unshift(...shuffle(result.revealed));
@@ -402,7 +474,6 @@
             playExtraCard(card, handleEffectResult);
           });
       }
-
       function promptMustardSeedCard(remaining) {
         if (remaining <= 0) { finishTurn(); return; }
         const me = currentState.players[MY_PLAYER_INDEX];
@@ -419,7 +490,6 @@
             playExtraCard(card, handleEffectResult);
           });
       }
-
       function panelBigFish(result) {
         pickSuit("The Big Fish — choose the active suit.", suit => {
           currentState.activeSuit = suit;
@@ -439,32 +509,6 @@
             finishTurn();
           });
       }
-
-      function panelBigStorm(result) {
-        const me = currentState.players[MY_PLAYER_INDEX];
-        const others = currentState.players.filter(p => p.id !== me.id);
-        if (result.mode === "single") {
-          pickButtons("The Big Storm — choose another player. They may discard 1 card.",
-            others, p => p.name, target => promptDiscardOne(target.id, () => finishTurn()));
-        } else {
-          pickButtons("The Big Storm (Blessing) — choose another player. You and they may each discard 1 card.",
-            others, p => p.name, target => {
-              promptDiscardOne(me.id, () => promptDiscardOne(target.id, () => finishTurn()));
-            });
-        }
-      }
-      function promptDiscardOne(playerId, onDone) {
-        const p = currentState.players.find(pl => pl.id === playerId);
-        if (p.hand.length === 0) { onDone(); return; }
-        pickButtons(`${p.name}, discard a card (or skip).`,
-          p.hand.slice(), c => cardDef(c).name, card => {
-            p.hand = p.hand.filter(h => h.uid !== card.uid);
-            currentState.discardPile.push(card);
-            if (checkWin(currentState, p.id)) { pushState(currentState); return; }
-            onDone();
-          }, { skipLabel: "Skip", onSkip: onDone });
-      }
-
       function panelEmptyTomb(result) {
         const me = currentState.players[MY_PLAYER_INDEX];
         const belowTop = currentState.discardPile.slice(0, -1);
@@ -474,39 +518,13 @@
             currentState.discardPile = currentState.discardPile.filter(d => d.uid !== card.uid);
             if (result.mode === "take") {
               me.hand.push(card);
-              if (checkWin(currentState, me.id)) { pushState(currentState); return; }
+              if (checkWin(currentState, me.id)) { pushSplitState(currentState); return; }
               finishTurn();
             } else {
               playExtraCard(card, handleEffectResult);
             }
           });
       }
-
-      function panelGoodSamaritan(result) {
-        const me = currentState.players[MY_PLAYER_INDEX];
-        const others = currentState.players.filter(p => p.id !== me.id);
-        pickButtons("The Good Samaritan — choose a player to give a card to.",
-          others, p => p.name, target => {
-            pickButtons(`Give a card to ${target.name}.`, me.hand.slice(), c => cardDef(c).name, card => {
-              me.hand = me.hand.filter(h => h.uid !== card.uid);
-              target.hand.push(card);
-              if (checkWin(currentState, me.id)) { pushState(currentState); return; }
-              if (result.mode === "normal") finishTurn();
-              else promptOptionalPlay(() => finishTurn());
-            });
-          });
-      }
-      function promptOptionalPlay(onDone) {
-        const me = currentState.players[MY_PLAYER_INDEX];
-        const legalCards = me.hand.filter(c => canPlayCard(c, currentState, me.id) || canPlayCardIgnoringTurn(c, currentState));
-        if (legalCards.length === 0) { onDone(); return; }
-        pickButtons(`${me.name} may play 1 card (or skip).`,
-          legalCards, c => cardDef(c).name, card => {
-            me.hand = me.hand.filter(h => h.uid !== card.uid);
-            playExtraCard(card, handleEffectResult);
-          }, { skipLabel: "Skip", onSkip: onDone });
-      }
-
       function panelGoodShepherdChoose(result) {
         const me = currentState.players[MY_PLAYER_INDEX];
         if (result.revealed.length === 0) { finishTurn(); return; }
@@ -514,11 +532,10 @@
           result.revealed, c => cardDef(c).name, card => {
             currentState.discardPile = currentState.discardPile.filter(d => d.uid !== card.uid);
             me.hand.push(card);
-            if (checkWin(currentState, me.id)) { pushState(currentState); return; }
+            if (checkWin(currentState, me.id)) { pushSplitState(currentState); return; }
             finishTurn();
           });
       }
-
       function panelTreeClimber(result) {
         if (result.revealed.length === 0) { finishTurn(); return; }
         showActionPanel(`
@@ -531,29 +548,6 @@
           finishTurn();
         };
       }
-
-      function panelTwoCoins(result) {
-        const me = currentState.players[MY_PLAYER_INDEX];
-        const others = currentState.players.filter(p => p.id !== me.id);
-        pickButtons("Two Coins — choose a player to give a card to.",
-          others, p => p.name, target => {
-            pickButtons(`Give a card to ${target.name}.`, me.hand.slice(), c => cardDef(c).name, card => {
-              me.hand = me.hand.filter(h => h.uid !== card.uid);
-              target.hand.push(card);
-              if (checkWin(currentState, me.id)) { pushState(currentState); return; }
-              if (result.mode === "normal") {
-                me.blessings += 1;
-                finishTurn();
-              } else {
-                pickSuit("Choose the active suit.", suit => {
-                  currentState.activeSuit = suit;
-                  finishTurn();
-                });
-              }
-            });
-          });
-      }
-
       function panelWalkOnWater(result) {
         const me = currentState.players[MY_PLAYER_INDEX];
         pickButtons("Walk On Water — play any 1 card from your hand, regardless of suit or number.",
@@ -571,15 +565,13 @@
             finishTurn();
           });
       }
-
       function panelChooseSuit(result) {
         pickSuit("Wisdom — choose the active suit.", suit => {
           currentState.activeSuit = suit;
           currentState.activeNumber = null;
-          finishTurn(); // Wisdom's own exception — no free-play grant, see README
+          finishTurn();
         });
       }
-
       function panelRedeemedChoose(result) {
         const me = currentState.players[MY_PLAYER_INDEX];
         const belowTop = currentState.discardPile.slice(0, -1);
@@ -591,7 +583,6 @@
             finishMiracleTurn();
           });
       }
-
       function panelOverflow(result) {
         const me = currentState.players[MY_PLAYER_INDEX];
         const selected = new Set();
@@ -615,11 +606,101 @@
             me.hand = me.hand.filter(c => !selected.has(c.uid));
             currentState.discardPile.push(...toDiscard);
             drawCard(currentState, me.id, toDiscard.length);
-            if (checkWin(currentState, me.id)) { pushState(currentState); return; }
+            if (checkWin(currentState, me.id)) { pushSplitState(currentState); return; }
             finishMiracleTurn();
           };
         }
         draw();
+      }
+      function promptOptionalPlay(onDone) {
+        const me = currentState.players[MY_PLAYER_INDEX];
+        const legalCards = me.hand.filter(c => canPlayCard(c, currentState, me.id) || canPlayCardIgnoringTurn(c, currentState));
+        if (legalCards.length === 0) { onDone(); return; }
+        pickButtons(`${me.name} may play 1 card (or skip).`,
+          legalCards, c => cardDef(c).name, card => {
+            me.hand = me.hand.filter(h => h.uid !== card.uid);
+            playExtraCard(card, handleEffectResult);
+          }, { skipLabel: "Skip", onSkip: onDone });
+      }
+
+      // ---- Cards needing hidden-hands-specific handling ----
+
+      // Give-a-card cards: my own removal is a normal local mutation,
+      // but adding it to THEIR hand has to be a real, separate write
+      // (arrayUnion) — I can never construct their real array myself.
+      function panelGoodSamaritan(result) {
+        const me = currentState.players[MY_PLAYER_INDEX];
+        const others = currentState.players.filter(p => p.id !== me.id);
+        pickButtons("The Good Samaritan — choose a player to give a card to.",
+          others, p => p.name, target => {
+            pickButtons(`Give a card to ${target.name}.`, me.hand.slice(), c => cardDef(c).name, async card => {
+              me.hand = me.hand.filter(h => h.uid !== card.uid);
+              target.hand.push(card); // local placeholder bookkeeping only
+              await giveCardTo(latestPublic.seats[currentState.players.indexOf(target)], card);
+              if (checkWin(currentState, me.id)) { pushSplitState(currentState); return; }
+              if (result.mode === "normal") finishTurn();
+              else promptOptionalPlay(() => finishTurn());
+            });
+          });
+      }
+      function panelTwoCoins(result) {
+        const me = currentState.players[MY_PLAYER_INDEX];
+        const others = currentState.players.filter(p => p.id !== me.id);
+        pickButtons("Two Coins — choose a player to give a card to.",
+          others, p => p.name, target => {
+            pickButtons(`Give a card to ${target.name}.`, me.hand.slice(), c => cardDef(c).name, async card => {
+              me.hand = me.hand.filter(h => h.uid !== card.uid);
+              target.hand.push(card);
+              await giveCardTo(latestPublic.seats[currentState.players.indexOf(target)], card);
+              if (checkWin(currentState, me.id)) { pushSplitState(currentState); return; }
+              if (result.mode === "normal") {
+                me.blessings += 1;
+                finishTurn();
+              } else {
+                pickSuit("Choose the active suit.", suit => {
+                  currentState.activeSuit = suit;
+                  finishTurn();
+                });
+              }
+            });
+          });
+      }
+
+      // The Big Storm — simplified (see the note at the top of the
+      // page). Discarding your OWN card is a normal local move, same
+      // as before. Discarding from the OTHER player's hand can't be
+      // done blind (Firestore's atomic ops can add to an array
+      // without reading it, but can't remove "some element" without
+      // knowing what's in it) — so for now, targeting the other
+      // player is a no-op beyond the log message. A future pass
+      // would replace this with a live request that pauses on their
+      // device until they pick.
+      function panelBigStorm(result) {
+        const me = currentState.players[MY_PLAYER_INDEX];
+        const others = currentState.players.filter(p => p.id !== me.id);
+        if (result.mode === "single") {
+          pickButtons("The Big Storm — choose another player.", others, p => p.name, target => {
+            log(`(Simplified) The Big Storm targeted ${target.name} — their discard isn't implemented in this hidden-hands test yet.`);
+            finishTurn();
+          });
+        } else {
+          pickButtons("The Big Storm (Blessing) — choose another player. You may discard 1 card.", others, p => p.name, target => {
+            promptDiscardSelf(() => {
+              log(`(Simplified) The Big Storm targeted ${target.name} — their discard isn't implemented in this hidden-hands test yet.`);
+              finishTurn();
+            });
+          });
+        }
+      }
+      function promptDiscardSelf(onDone) {
+        const me = currentState.players[MY_PLAYER_INDEX];
+        if (me.hand.length === 0) { onDone(); return; }
+        pickButtons("Discard a card (or skip).", me.hand.slice(), c => cardDef(c).name, card => {
+          me.hand = me.hand.filter(h => h.uid !== card.uid);
+          currentState.discardPile.push(card);
+          if (checkWin(currentState, me.id)) { pushSplitState(currentState); return; }
+          onDone();
+        }, { skipLabel: "Skip", onSkip: onDone });
       }
 
       // ---- Top-level card click ----
@@ -628,7 +709,7 @@
         const def = cardDef(card);
         if (def.type === "number") {
           const result = playNumberCard(currentState, me.id, card.uid);
-          if (result.won) { pushState(currentState); return; }
+          if (result.won) { pushSplitState(currentState); return; }
           finishTurn();
           return;
         }
@@ -651,37 +732,38 @@
         }
       }
 
-      log(`Connecting to room ${roomId} as Seat ${seat}…`);
-      onSnapshot(roomRef, snap => {
+      // ---- Listeners: public doc + my own private hand ----
+      onSnapshot(publicRef, snap => {
         if (snap.metadata.hasPendingWrites) return;
-        if (!snap.exists()) {
-          if (seat === 1) {
-            log("No game found — creating a new 2-player game as host (Seat 1)…");
-            const fresh = createGameState(["Player 1", "Player 2"]);
-            pushState(fresh).then(ok => {
-              if (!ok) return;
-              currentState = fresh;
-              setStatus("connected", "Connected — live");
-              log("Game created — you're in.");
-              render(fresh);
-            });
-          } else {
-            setStatus("connecting", "Waiting for the host to start the game…");
-          }
+        latestPublic = snap.data();
+        tryRender();
+      }, err => { setStatus("error", "Connection error"); log(`Public doc error: ${err.code || ""} ${err.message}`); });
+
+      onSnapshot(myHandRef, snap => {
+        if (snap.metadata.hasPendingWrites) return;
+        latestMyHand = snap.exists() ? (snap.data().hand || []) : [];
+        tryRender();
+      }, err => { log(`Hand doc error: ${err.code || ""} ${err.message}`); });
+
+      function tryRender() {
+        if (!latestPublic) return;
+        if (latestPublic.status === "waiting") {
+          setStatus("connecting", "Waiting for the second player to join…");
+          infoEl.textContent = "Share the room code above with the other player.";
           return;
         }
-        currentState = snap.data();
+        if (latestMyHand === null) return;
+        const state = buildWorkingState();
+        if (!state) return;
+        currentState = state;
         setStatus("connected", "Connected — live");
-        log("Received game state update.");
-        render(currentState);
-      }, err => {
-        setStatus("error", "Connection error");
-        log(`Error: ${err.code || ""} ${err.message}`);
-      });
+        render(state);
+      }
 
       function render(state) {
         actionPending = false;
         hideActionPanel();
+        incomingEl.style.display = "none";
 
         if (state.status === "finished") {
           const winner = state.players[state.players.findIndex(p => p.id === state.winnerId)];
@@ -692,10 +774,6 @@
         }
 
         const me = state.players[MY_PLAYER_INDEX];
-        if (!me) {
-          infoEl.textContent = `Seat ${seat} doesn't exist in this 2-player game.`;
-          return;
-        }
         const current = state.players[state.currentPlayerIndex];
         const isMyTurn = current.id === me.id;
 
