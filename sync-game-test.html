@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pass It On — Game State Sync Test</title>
+<style>
+  body {
+    font-family: -apple-system, system-ui, sans-serif;
+    background: #0a0d16;
+    color: #f3f5fb;
+    max-width: 520px;
+    margin: 30px auto;
+    padding: 0 20px 60px;
+  }
+  h1 { font-size: 1.3rem; text-align: center; }
+  p.sub { color: #9aa3ba; font-size: 0.85rem; text-align: center; }
+  #status {
+    display: block; text-align: center;
+    padding: 6px 14px; border-radius: 999px; font-size: 0.8rem; font-weight: 600;
+    margin: 12px auto; width: fit-content;
+  }
+  #status.connecting { background: rgba(246,168,33,0.15); color: #ffc266; }
+  #status.connected { background: rgba(41,214,200,0.15); color: #6ef0e4; }
+  #status.error { background: rgba(228,72,122,0.15); color: #ff9db6; }
+  #game-info {
+    background: rgba(255,255,255,0.05); border-radius: 14px; padding: 16px 18px;
+    margin: 16px 0; line-height: 1.7; font-size: 0.92rem;
+  }
+  #game-info b { color: #ffc266; }
+  #hand-area { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 16px 0; }
+  .card-btn {
+    font-family: inherit; font-size: 0.85rem; font-weight: 600;
+    padding: 10px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.2);
+    background: rgba(255,255,255,0.06); color: #f3f5fb; cursor: pointer;
+  }
+  .card-btn.legal { border-color: #ffc266; background: rgba(255,194,102,0.15); }
+  .card-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  #draw-btn {
+    display: block; margin: 16px auto; font-size: 1rem; font-weight: 700;
+    padding: 12px 28px; border-radius: 999px; border: none;
+    background: linear-gradient(135deg, #ffc266, #ff9d3d); color: #201404; cursor: pointer;
+  }
+  #draw-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  #log {
+    margin-top: 24px; text-align: left; background: rgba(255,255,255,0.05);
+    border-radius: 12px; padding: 12px 16px; font-size: 0.78rem; color: #9aa3ba;
+    max-height: 160px; overflow-y: auto;
+  }
+  #log div { padding: 2px 0; }
+  .note { font-size: 0.78rem; color: #ff9db6; text-align: center; margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<h1>Game State Sync Test</h1>
+<p class="sub">
+  Real game engine, real card data, synced live through Firestore.
+  Add <code>?seat=2</code> to the URL on your second device (this one
+  is seat 1). <b>Number cards only for now</b> — Action/Miracle cards
+  aren't wired into this test page yet.
+</p>
+
+<div id="status" class="connecting">Connecting…</div>
+<div id="game-info">Waiting for game state…</div>
+<div id="hand-area"></div>
+<button id="draw-btn" disabled>Draw a card</button>
+
+<div id="log"></div>
+
+<script src="js/cards.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/firebase-config.js"></script>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.17.0/firebase-app.js";
+  import {
+    getFirestore, doc, setDoc, onSnapshot
+  } from "https://www.gstatic.com/firebasejs/12.17.0/firebase-firestore.js";
+
+  const statusEl = document.getElementById("status");
+  const infoEl = document.getElementById("game-info");
+  const handEl = document.getElementById("hand-area");
+  const drawBtn = document.getElementById("draw-btn");
+  const logEl = document.getElementById("log");
+
+  function log(msg) {
+    const line = document.createElement("div");
+    line.textContent = `${new Date().toLocaleTimeString()} — ${msg}`;
+    logEl.prepend(line);
+  }
+  function setStatus(state, text) {
+    statusEl.className = state;
+    statusEl.textContent = text;
+  }
+
+  const params = new URLSearchParams(location.search);
+  const ROOM_ID = params.get("room") || "game-sync-test-room";
+  const SEAT = parseInt(params.get("seat") || "1", 10); // 1 or 2
+  const MY_PLAYER_INDEX = SEAT - 1;
+
+  document.title = `Pass It On — Seat ${SEAT}`;
+
+  if (!window.firebaseConfig || window.firebaseConfig.apiKey.startsWith("PASTE-")) {
+    setStatus("error", "Missing config");
+    log("js/firebase-config.js still has placeholder values.");
+  } else {
+    log(`Initializing as Seat ${SEAT}…`);
+    try {
+      const app = initializeApp(window.firebaseConfig);
+      const db = getFirestore(app);
+      const roomRef = doc(db, "games", ROOM_ID);
+      let currentState = null;
+
+      async function pushState(state) {
+        try {
+          await setDoc(roomRef, state);
+        } catch (err) {
+          log(`Error saving state: ${err.code || ""} ${err.message}`);
+        }
+      }
+
+      onSnapshot(roomRef, snap => {
+        if (snap.metadata.hasPendingWrites) return; // wait for the server-confirmed version
+        if (!snap.exists()) {
+          if (SEAT === 1) {
+            log("No game found — creating a new 2-player game as host (Seat 1)…");
+            const fresh = createGameState(["Player 1", "Player 2"]);
+            pushState(fresh);
+          } else {
+            setStatus("connecting", "Waiting for Seat 1 to start the game…");
+          }
+          return;
+        }
+        currentState = snap.data();
+        setStatus("connected", "Connected — live");
+        log("Received game state update.");
+        render(currentState);
+      }, err => {
+        setStatus("error", "Connection error");
+        log(`Error: ${err.code || ""} ${err.message}`);
+      });
+
+      function render(state) {
+        if (state.status === "finished") {
+          const winner = state.players[state.players.findIndex(p => p.id === state.winnerId)];
+          infoEl.innerHTML = `<b>${winner.name} wins!</b> (Turn ${state.turnCount})`;
+          handEl.innerHTML = "";
+          drawBtn.disabled = true;
+          return;
+        }
+
+        const me = state.players[MY_PLAYER_INDEX];
+        if (!me) {
+          infoEl.textContent = `Seat ${SEAT} doesn't exist in this 2-player game — use ?seat=1 or ?seat=2.`;
+          return;
+        }
+        const current = state.players[state.currentPlayerIndex];
+        const isMyTurn = current.id === me.id;
+
+        infoEl.innerHTML = `
+          Turn <b>${state.turnCount}</b> — <b>${current.name}</b>'s turn${isMyTurn ? " (you)" : ""}<br>
+          Active: <b>${state.activeSuit || "—"}</b> ${state.activeNumber ?? ""}<br>
+          Draw pile: ${state.drawPile.length} · Your hand: ${me.hand.length} · Their hand: ${state.players[1 - MY_PLAYER_INDEX].hand.length}<br>
+          Blessings: ${me.blessings}
+        `;
+
+        handEl.innerHTML = "";
+        me.hand.forEach(card => {
+          const def = cardDef(card);
+          const legal = isMyTurn && canPlayCard(card, state, me.id) && def.type === "number";
+          const btn = document.createElement("button");
+          btn.className = "card-btn" + (legal ? " legal" : "");
+          btn.textContent = def.type === "number" ? def.name : `${def.name} (${def.type})`;
+          btn.disabled = !legal;
+          btn.addEventListener("click", () => {
+            const result = playNumberCard(state, me.id, card.uid);
+            if (!result.won) advanceTurn(state);
+            log(`You played ${def.name}.`);
+            pushState(state);
+          });
+          handEl.appendChild(btn);
+        });
+
+        const anyLegal = me.hand.some(c => isMyTurn && canPlayCard(c, state, me.id) && cardDef(c).type === "number");
+        drawBtn.disabled = !isMyTurn || anyLegal;
+      }
+
+      drawBtn.addEventListener("click", () => {
+        if (!currentState) return;
+        const me = currentState.players[MY_PLAYER_INDEX];
+        drawCard(currentState, me.id, 1);
+        advanceTurn(currentState);
+        log("You drew a card.");
+        pushState(currentState);
+      });
+
+    } catch (err) {
+      setStatus("error", "Setup failed");
+      log(`Error: ${err.code || ""} ${err.message}`);
+    }
+  }
+</script>
+</body>
+</html>
