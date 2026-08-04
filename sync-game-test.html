@@ -15,6 +15,29 @@
   }
   h1 { font-size: 1.3rem; text-align: center; }
   p.sub { color: #9aa3ba; font-size: 0.85rem; text-align: center; }
+
+  /* ---- Lobby ---- */
+  #lobby { text-align: center; margin-top: 20px; }
+  #lobby .btn-primary, #lobby .btn-secondary {
+    display: block; width: 100%; font-size: 1.05rem; font-weight: 700;
+    padding: 14px; border-radius: 12px; border: none; cursor: pointer; margin: 10px 0;
+  }
+  #lobby .btn-primary { background: linear-gradient(135deg, #ffc266, #ff9d3d); color: #201404; }
+  #lobby .btn-secondary { background: rgba(255,255,255,0.08); color: #f3f5fb; border: 1px solid rgba(255,255,255,0.2); }
+  #lobby .or { color: #9aa3ba; font-size: 0.85rem; margin: 18px 0 6px; }
+  #join-row { display: flex; gap: 8px; }
+  #join-code-input {
+    flex: 1; font-size: 1.2rem; font-weight: 700; text-align: center; text-transform: uppercase;
+    letter-spacing: 0.15em; padding: 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.2);
+    background: rgba(255,255,255,0.06); color: #f3f5fb;
+  }
+  #room-code-banner {
+    text-align: center; background: rgba(255,194,102,0.12); border: 1px solid rgba(255,194,102,0.35);
+    border-radius: 12px; padding: 10px; margin-bottom: 14px; font-size: 0.9rem;
+  }
+  #room-code-banner b { font-size: 1.3rem; letter-spacing: 0.15em; color: #ffc266; }
+
+  /* ---- Game ---- */
   #status {
     display: block; text-align: center;
     padding: 6px 14px; border-radius: 999px; font-size: 0.8rem; font-weight: 600;
@@ -48,7 +71,6 @@
     max-height: 160px; overflow-y: auto;
   }
   #log div { padding: 2px 0; }
-  .note { font-size: 0.78rem; color: #ff9db6; text-align: center; margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -56,15 +78,26 @@
 <h1>Game State Sync Test</h1>
 <p class="sub">
   Real game engine, real card data, synced live through Firestore.
-  Add <code>?seat=2</code> to the URL on your second device (this one
-  is seat 1). <b>Number cards only for now</b> — Action/Miracle cards
-  aren't wired into this test page yet.
+  <b>Number cards only for now</b> — Action/Miracle cards aren't wired
+  into this test page yet. Still a 2-player test.
 </p>
 
-<div id="status" class="connecting">Connecting…</div>
-<div id="game-info">Waiting for game state…</div>
-<div id="hand-area"></div>
-<button id="draw-btn" disabled>Draw a card</button>
+<div id="lobby">
+  <button id="host-btn" class="btn-primary">Host a new game</button>
+  <p class="or">— or —</p>
+  <div id="join-row">
+    <input id="join-code-input" placeholder="CODE" maxlength="4" />
+    <button id="join-btn" class="btn-secondary" style="width:auto;">Join</button>
+  </div>
+</div>
+
+<div id="game" style="display:none">
+  <div id="room-code-banner"></div>
+  <div id="status" class="connecting">Connecting…</div>
+  <div id="game-info">Waiting for game state…</div>
+  <div id="hand-area"></div>
+  <button id="draw-btn" disabled>Draw a card</button>
+</div>
 
 <div id="log"></div>
 
@@ -77,6 +110,9 @@
     getFirestore, doc, setDoc, onSnapshot
   } from "https://www.gstatic.com/firebasejs/12.17.0/firebase-firestore.js";
 
+  const lobbyEl = document.getElementById("lobby");
+  const gameEl = document.getElementById("game");
+  const roomBanner = document.getElementById("room-code-banner");
   const statusEl = document.getElementById("status");
   const infoEl = document.getElementById("game-info");
   const handEl = document.getElementById("hand-area");
@@ -93,28 +129,60 @@
     statusEl.textContent = text;
   }
 
-  const params = new URLSearchParams(location.search);
-  const ROOM_ID = params.get("room") || "game-sync-test-room";
-  const SEAT = parseInt(params.get("seat") || "1", 10); // 1 or 2
-  const MY_PLAYER_INDEX = SEAT - 1;
-
-  document.title = `Pass It On — Seat ${SEAT}`;
+  // Short, easy-to-read/say-aloud codes — excludes 0/O/1/I/L, which
+  // get confused with each other when read out or typed on mobile.
+  function generateRoomCode() {
+    const chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+    let code = "";
+    for (let i = 0; i < 4; i++) code += chars[Math.floor(Math.random() * chars.length)];
+    return code;
+  }
 
   if (!window.firebaseConfig || window.firebaseConfig.apiKey.startsWith("PASTE-")) {
-    setStatus("error", "Missing config");
-    log("js/firebase-config.js still has placeholder values.");
+    lobbyEl.innerHTML = `<p style="color:#ff9db6">js/firebase-config.js still has placeholder values — paste your real Firebase config in there first.</p>`;
   } else {
-    log(`Initializing as Seat ${SEAT}…`);
-    try {
-      const app = initializeApp(window.firebaseConfig);
-      const db = getFirestore(app);
-      const roomRef = doc(db, "games", ROOM_ID);
+    const app = initializeApp(window.firebaseConfig);
+    const db = getFirestore(app);
+
+    // ---- Lobby wiring ----
+    document.getElementById("host-btn").addEventListener("click", () => {
+      const code = generateRoomCode();
+      setUrl(code, 1);
+      startGame(code, 1, /* isHost */ true);
+    });
+    document.getElementById("join-btn").addEventListener("click", () => {
+      const code = document.getElementById("join-code-input").value.trim().toUpperCase();
+      if (!code) return;
+      setUrl(code, 2);
+      startGame(code, 2, /* isHost */ false);
+    });
+
+    function setUrl(roomId, seat) {
+      const url = new URL(location.href);
+      url.searchParams.set("room", roomId);
+      url.searchParams.set("seat", seat);
+      history.replaceState(null, "", url);
+    }
+
+    // Reloading a page you already joined (or a direct link with
+    // ?room=&seat= already in it) skips straight past the lobby.
+    const params = new URLSearchParams(location.search);
+    const existingRoom = params.get("room");
+    if (existingRoom) {
+      startGame(existingRoom, parseInt(params.get("seat") || "1", 10), false);
+    }
+
+    function startGame(roomId, seat, isHost) {
+      lobbyEl.style.display = "none";
+      gameEl.style.display = "block";
+      document.title = `Pass It On — Room ${roomId} — Seat ${seat}`;
+      roomBanner.innerHTML = `Room code: <b>${roomId}</b>${isHost ? " — share this with the other player" : ""}`;
+
+      const MY_PLAYER_INDEX = seat - 1;
+      const roomRef = doc(db, "games", roomId);
       let currentState = null;
       // Prevents firing a second local move before the first one's
-      // Firestore round-trip confirms — without this, a fast second
-      // click can advance the turn twice from the same device before
-      // the UI catches up (exactly what caused the "drew twice in a
-      // row" issue).
+      // Firestore round-trip confirms.
       let actionPending = false;
       function lockControls() {
         actionPending = true;
@@ -130,15 +198,16 @@
         }
       }
 
+      log(`Connecting to room ${roomId} as Seat ${seat}…`);
       onSnapshot(roomRef, snap => {
-        if (snap.metadata.hasPendingWrites) return; // wait for the server-confirmed version
+        if (snap.metadata.hasPendingWrites) return;
         if (!snap.exists()) {
-          if (SEAT === 1) {
+          if (seat === 1) {
             log("No game found — creating a new 2-player game as host (Seat 1)…");
             const fresh = createGameState(["Player 1", "Player 2"]);
             pushState(fresh);
           } else {
-            setStatus("connecting", "Waiting for Seat 1 to start the game…");
+            setStatus("connecting", "Waiting for the host to start the game…");
           }
           return;
         }
@@ -152,8 +221,6 @@
       });
 
       function render(state) {
-        // Every call here comes from a server-confirmed snapshot, so
-        // it's always safe to accept new input again at this point.
         actionPending = false;
 
         if (state.status === "finished") {
@@ -166,7 +233,7 @@
 
         const me = state.players[MY_PLAYER_INDEX];
         if (!me) {
-          infoEl.textContent = `Seat ${SEAT} doesn't exist in this 2-player game — use ?seat=1 or ?seat=2.`;
+          infoEl.textContent = `Seat ${seat} doesn't exist in this 2-player game.`;
           return;
         }
         const current = state.players[state.currentPlayerIndex];
@@ -211,10 +278,6 @@
         log("You drew a card.");
         pushState(currentState);
       });
-
-    } catch (err) {
-      setStatus("error", "Setup failed");
-      log(`Error: ${err.code || ""} ${err.message}`);
     }
   }
 </script>
