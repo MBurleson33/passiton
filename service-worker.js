@@ -5,7 +5,7 @@
 // Bump CACHE_NAME whenever you change any cached file so
 // returning players get the update instead of a stale cache.
 // ============================================================
-const CACHE_NAME = "pass-it-on-v19";
+const CACHE_NAME = "pass-it-on-v20";
 
 const ASSETS = [
   "./",
@@ -66,14 +66,31 @@ self.addEventListener("activate", event => {
 });
 
 self.addEventListener("fetch", event => {
+  const url = new URL(event.request.url);
+  const isGoogleFonts = url.origin === "https://fonts.googleapis.com" || url.origin === "https://fonts.gstatic.com";
+
+  // Build the set of exact same-origin URLs this service worker is
+  // allowed to cache, resolved the same way the browser resolves
+  // relative ASSETS paths against this file's own location.
+  const cacheableUrls = new Set(ASSETS.map(a => new URL(a, self.registration.scope).href));
+  const isCoreAsset = cacheableUrls.has(event.request.url);
+
+  if (!isCoreAsset && !isGoogleFonts) {
+    // Not part of the real app's precached shell — most importantly
+    // this covers standalone test pages (sync-game-test.html and
+    // friends), which should always reflect whatever was most
+    // recently deployed rather than getting silently pinned to
+    // whatever version happened to load first. Always go to the
+    // network, never read from or write to the cache.
+    event.respondWith(fetch(event.request));
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request).then(cached => {
       if (cached) return cached;
       return fetch(event.request).then(response => {
-        // Cache new same-origin GET requests as they're seen (e.g. future card art)
-        const isSameOrigin = event.request.url.startsWith(self.location.origin);
-        const isGoogleFonts = event.request.url.startsWith("https://fonts.googleapis.com") || event.request.url.startsWith("https://fonts.gstatic.com");
-        if (event.request.method === "GET" && response.ok && (isSameOrigin || isGoogleFonts)) {
+        if (event.request.method === "GET" && response.ok) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
         }
