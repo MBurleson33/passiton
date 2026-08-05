@@ -454,7 +454,21 @@
         if (result.won) { pushSplitState(currentState); return; }
         if (result.error) { alert(result.error); return; }
         if (!result.needsInput) {
-          if (result.miracle) finishMiracleTurn(); else finishTurn();
+          if (result.miracle) {
+            if (MY_PLAYER_INDEX === currentState.currentPlayerIndex) {
+              finishMiracleTurn();
+            } else {
+              // Played reactively, out of turn (Favor/Strength's "any
+              // time" timing) — resolve the effect (e.g. gain a
+              // Blessing) but don't touch whose turn it is or grant
+              // free play; the actual current player's turn is
+              // completely unaffected by this.
+              hideActionPanel();
+              pushSplitState(currentState);
+            }
+          } else {
+            finishTurn();
+          }
           return;
         }
         routeNeedsInput(result);
