@@ -847,7 +847,15 @@
       }
 
       // ---- Listeners: public doc + my own private hand ----
-      onSnapshot(publicRef, snap => {
+      // includeMetadataChanges:true is required here — without it,
+      // Firestore does NOT re-invoke this callback when your own
+      // pending write transitions to confirmed (hasPendingWrites
+      // false), since the document *content* didn't change between
+      // those two states from the SDK's point of view. That was the
+      // actual bug: your own hand never appeared to update, because
+      // the "confirmed" snapshot this code was waiting for never
+      // arrived at all for your own writes.
+      onSnapshot(publicRef, { includeMetadataChanges: true }, snap => {
         if (snap.metadata.hasPendingWrites) return;
         latestPublic = snap.data();
         if (latestPublic.status === "playing") {
@@ -856,7 +864,7 @@
         tryRender();
       }, err => { setStatus("error", "Connection error"); log(`Public doc error: ${err.code || ""} ${err.message}`); });
 
-      onSnapshot(myHandRef, snap => {
+      onSnapshot(myHandRef, { includeMetadataChanges: true }, snap => {
         if (snap.metadata.hasPendingWrites) return;
         latestMyHand = snap.exists() ? (snap.data().hand || []) : [];
         log(`Hand doc update — ${latestMyHand.length} card(s) in hand.`);
