@@ -329,7 +329,9 @@
       // ---- Persisting a move: my hand (full), public fields (full), never their hand ----
       async function pushSplitState(state) {
         try {
-          await setDoc(myHandRef, { hand: state.players[MY_PLAYER_INDEX].hand });
+          const myHandToPush = state.players[MY_PLAYER_INDEX].hand;
+          log(`Pushing my hand — ${myHandToPush.length} card(s) to ${myHandRef.path}`);
+          await setDoc(myHandRef, { hand: myHandToPush });
           const { players, ...rest } = state;
           const publicPlayers = players.map(p => ({
             id: p.id, name: p.name, blessings: p.blessings, connected: p.connected, handCount: p.hand.length
@@ -817,9 +819,10 @@
       function onCardClick(card) {
         const me = currentState.players[MY_PLAYER_INDEX];
         const def = cardDef(card);
-        log(`Playing ${def.name} (${def.type})…`);
+        log(`Playing ${def.name} (${def.type})… hand before: ${me.hand.length}`);
         if (def.type === "number") {
           const result = playNumberCard(currentState, me.id, card.uid);
+          log(`After playNumberCard — hand now: ${currentState.players[MY_PLAYER_INDEX].hand.length}`);
           if (result.won) { pushSplitState(currentState); return; }
           finishTurn();
           return;
@@ -945,8 +948,9 @@
         if (!currentState || actionPending) return;
         lockControls();
         const me = currentState.players[MY_PLAYER_INDEX];
-        log("Drawing a card…");
+        log(`Drawing a card… hand before: ${me.hand.length}`);
         drawCard(currentState, me.id, 1);
+        log(`After drawCard — hand now: ${currentState.players[MY_PLAYER_INDEX].hand.length}`);
         currentState.freePlayPlayerId = null;
         finishTurn();
       });
