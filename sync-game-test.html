@@ -335,6 +335,7 @@
             id: p.id, name: p.name, blessings: p.blessings, connected: p.connected, handCount: p.hand.length
           }));
           await setDoc(publicRef, { ...rest, players: publicPlayers, seats: latestPublic.seats, playerUids: latestPublic.playerUids }, { merge: false });
+          log(`Pushed state — turn ${state.turnCount}, next up: ${state.players[state.currentPlayerIndex].name}, active ${state.activeSuit || "—"} ${state.activeNumber ?? ""}`);
           return true;
         } catch (err) {
           log(`Error saving state: ${err.code || ""} ${err.message}`);
@@ -345,7 +346,12 @@
       // someone else's hand doc, and it's additive-only (arrayUnion),
       // so it never needs to read (and can't corrupt) their real data.
       async function giveCardTo(targetUid, card) {
-        await updateDoc(handRef(targetUid), { hand: arrayUnion(card) });
+        try {
+          await updateDoc(handRef(targetUid), { hand: arrayUnion(card) });
+          log(`Gave ${cardDef(card).name} to ${targetUid.slice(0, 8)}…`);
+        } catch (err) {
+          log(`Error giving card: ${err.code || ""} ${err.message}`);
+        }
       }
 
       function lockControls() {
@@ -811,6 +817,7 @@
       function onCardClick(card) {
         const me = currentState.players[MY_PLAYER_INDEX];
         const def = cardDef(card);
+        log(`Playing ${def.name} (${def.type})…`);
         if (def.type === "number") {
           const result = playNumberCard(currentState, me.id, card.uid);
           if (result.won) { pushSplitState(currentState); return; }
@@ -840,12 +847,16 @@
       onSnapshot(publicRef, snap => {
         if (snap.metadata.hasPendingWrites) return;
         latestPublic = snap.data();
+        if (latestPublic.status === "playing") {
+          log(`Public update — turn ${latestPublic.turnCount}, current: ${latestPublic.players?.[latestPublic.currentPlayerIndex]?.name}, active ${latestPublic.activeSuit || "—"} ${latestPublic.activeNumber ?? ""}`);
+        }
         tryRender();
       }, err => { setStatus("error", "Connection error"); log(`Public doc error: ${err.code || ""} ${err.message}`); });
 
       onSnapshot(myHandRef, snap => {
         if (snap.metadata.hasPendingWrites) return;
         latestMyHand = snap.exists() ? (snap.data().hand || []) : [];
+        log(`Hand doc update — ${latestMyHand.length} card(s) in hand.`);
         tryRender();
       }, err => { log(`Hand doc error: ${err.code || ""} ${err.message}`); });
 
@@ -934,6 +945,7 @@
         if (!currentState || actionPending) return;
         lockControls();
         const me = currentState.players[MY_PLAYER_INDEX];
+        log("Drawing a card…");
         drawCard(currentState, me.id, 1);
         currentState.freePlayPlayerId = null;
         finishTurn();
