@@ -216,6 +216,33 @@ h1, h2, h3 {
 .player-name-row input::placeholder { color: var(--text-dim); }
 .player-name-row input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(246,168,33,0.18); }
 
+/* ---- Online mode ---- */
+.or-divider { text-align: center; color: var(--text-dim); font-size: 0.85rem; margin: 18px 0 6px; }
+.join-code-field {
+  flex: 1; font-family: var(--font-body); font-size: 1.15rem; font-weight: 700; text-align: center;
+  text-transform: uppercase; letter-spacing: 0.15em; padding: 10px 14px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text);
+}
+.online-lobby-status { margin-top: 16px; color: var(--text-dim); font-size: 0.88rem; text-align: center; min-height: 1.2em; }
+.online-opponents-info { text-align: center; color: var(--text-dim); font-size: 0.85rem; margin: 6px 0; }
+.online-discard-slot { display: flex; justify-content: center; margin: 10px 0; }
+.online-active-badges { justify-content: center; display: flex; gap: 8px; margin-bottom: 6px; }
+.online-panel {
+  display: none; background: var(--surface); backdrop-filter: blur(16px); border: 1px solid var(--glass-border);
+  border-radius: var(--radius); padding: 16px; margin: 10px 16px; text-align: center;
+}
+.online-panel p { font-size: 0.9rem; margin: 0 0 12px; color: var(--text); }
+.online-panel p.verse { font-style: italic; color: var(--text-dim); font-size: 0.82rem; }
+.online-panel .pick-row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 8px; }
+.online-panel button.pick-btn, .online-panel button:not(.pick-btn) {
+  font-family: var(--font-body); font-size: 0.85rem; font-weight: 600;
+  padding: 10px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-strong);
+  background: var(--surface-2); color: var(--text); cursor: pointer; margin: 4px;
+}
+.online-panel button small { display: block; font-weight: 400; opacity: 0.75; margin-top: 3px; max-width: 200px; }
+.online-draw-btn { margin: 10px auto; max-width: 320px; }
+.online-draw-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
 /* ---- Pass / results shared name display ---- */
 .pass-name { font-family: var(--font-head); font-size: 2rem; color: var(--accent-hi); margin: 8px 0 4px; font-weight: 800; }
 .pass-sub { color: var(--text-dim); }
