@@ -45,6 +45,15 @@
   #lobby .btn-secondary { background: var(--surface-2); color: var(--text); border: 1px solid var(--glass-border); }
   #lobby .or { color: var(--text-dim); font-size: 0.85rem; margin: 18px 0 6px; }
   #join-row { display: flex; gap: 8px; }
+  #count-row { display: flex; gap: 8px; justify-content: center; margin: 4px 0 8px; }
+  .count-btn {
+    font-family: var(--font-body); font-weight: 700; font-size: 1rem;
+    width: 46px; height: 46px; border-radius: 50%;
+    border: 1px solid var(--glass-border); background: var(--surface-2); color: var(--text); cursor: pointer;
+  }
+  .count-btn.active {
+    background: linear-gradient(135deg, var(--accent-hi), var(--accent)); color: #201404; border-color: var(--accent-hi);
+  }
   #join-code-input {
     flex: 1; font-family: var(--font-body); font-size: 1.2rem; font-weight: 700; text-align: center; text-transform: uppercase;
     letter-spacing: 0.15em; padding: 12px; border-radius: 12px; border: 1px solid var(--glass-border);
@@ -143,6 +152,10 @@
 
 <div id="lobby">
   <button id="host-btn" class="btn-primary">Host a new game</button>
+  <div id="count-picker" style="display:none;">
+    <p class="or">How many players?</p>
+    <div id="count-row"></div>
+  </div>
   <p class="or">— or —</p>
   <div id="join-row">
     <input id="join-code-input" placeholder="CODE" maxlength="4" />
@@ -220,9 +233,22 @@
 
     function wireLobby() {
       document.getElementById("host-btn").addEventListener("click", () => {
-        const code = generateRoomCode();
-        setUrl(code);
-        startGame(code, true);
+        document.getElementById("host-btn").style.display = "none";
+        const picker = document.getElementById("count-picker");
+        picker.style.display = "block";
+        const row = document.getElementById("count-row");
+        row.innerHTML = "";
+        [2, 3, 4, 5, 6].forEach(n => {
+          const btn = document.createElement("button");
+          btn.className = "count-btn";
+          btn.textContent = n;
+          btn.addEventListener("click", () => {
+            const code = generateRoomCode();
+            setUrl(code);
+            startGame(code, true, n);
+          });
+          row.appendChild(btn);
+        });
       });
       document.getElementById("join-btn").addEventListener("click", () => {
         const code = document.getElementById("join-code-input").value.trim().toUpperCase();
@@ -240,10 +266,10 @@
       history.replaceState(null, "", url);
     }
 
-    async function startGame(roomId, isHost) {
+    async function startGame(roomId, isHost, maxPlayers) {
       lobbyEl.style.display = "none";
       gameEl.style.display = "block";
-      roomBanner.innerHTML = `Room code: <b>${roomId}</b>${isHost ? " — share this with the other player" : ""}`;
+      roomBanner.innerHTML = `Room code: <b>${roomId}</b>${isHost ? " — share this with the other players" : ""}`;
 
       const publicRef = doc(db, "games", roomId);
       const myHandRef = doc(db, "games", roomId, "hands", myUid);
@@ -255,43 +281,53 @@
       let actionPending = false;
       let pendingAfterCard = null;
 
-      // ---- Bootstrap: create room, or join and (if needed) deal ----
+      // ---- Bootstrap: create room, or join (claiming a seat or
+      // reconnecting to one already claimed) and deal once full ----
       try {
         if (isHost) {
-          log("Creating room…");
+          log(`Creating a ${maxPlayers}-player room…`);
+          const seats = new Array(maxPlayers).fill(null);
+          seats[0] = myUid;
           await setDoc(publicRef, {
             status: "waiting",
-            seats: [myUid, null],
+            seats,
             playerUids: [myUid],
-            playerNames: ["Player 1", "Player 2"]
+            playerNames: seats.map((_, i) => `Player ${i + 1}`)
           });
         } else {
           log("Joining…");
           const snap = await getDoc(publicRef);
           if (!snap.exists()) throw new Error("Room not found — check the code.");
           const data = snap.data();
-          if (data.seats && data.seats[1] && data.seats[1] !== myUid) {
-            throw new Error("This room already has 2 players.");
-          }
-          await setDoc(publicRef, { seats: [data.seats[0], myUid], playerUids: arrayUnion(myUid) }, { merge: true });
+          const seats = data.seats.slice();
 
-          if (data.status === "waiting") {
-            log("Both players present — dealing the game…");
-            const fresh = createGameState(["Player 1", "Player 2"]);
-            const seat0Hand = fresh.players[0].hand;
-            const seat1Hand = fresh.players[1].hand;
-            await setDoc(handRef(data.seats[0]), { hand: seat0Hand });
-            await setDoc(myHandRef, { hand: seat1Hand });
+          if (!seats.includes(myUid)) {
+            const openIndex = seats.indexOf(null);
+            if (openIndex === -1) throw new Error("This room is already full.");
+            seats[openIndex] = myUid;
+            await setDoc(publicRef, { seats, playerUids: arrayUnion(myUid) }, { merge: true });
+            log(`Claimed seat ${openIndex + 1} of ${seats.length}.`);
+          } else {
+            log("Reconnected to my existing seat.");
+          }
+
+          if (data.status === "waiting" && !seats.includes(null)) {
+            log(`All ${seats.length} players present — dealing the game…`);
+            const names = seats.map((_, i) => `Player ${i + 1}`);
+            const fresh = createGameState(names);
+            for (let i = 0; i < seats.length; i++) {
+              await setDoc(handRef(seats[i]), { hand: fresh.players[i].hand });
+            }
             const { players, ...publicRest } = fresh;
-            const publicPlayers = players.map((p, i) => ({
+            const publicPlayers = players.map(p => ({
               id: p.id, name: p.name, blessings: p.blessings, connected: true, handCount: p.hand.length
             }));
             await setDoc(publicRef, {
               ...publicRest,
               players: publicPlayers,
               status: "playing",
-              seats: [data.seats[0], myUid],
-              playerUids: arrayUnion(myUid)
+              seats,
+              playerUids: seats
             }, { merge: true });
             log("Dealt — game started.");
           }
@@ -874,8 +910,10 @@
       function tryRender() {
         if (!latestPublic) return;
         if (latestPublic.status === "waiting") {
-          setStatus("connecting", "Waiting for the second player to join…");
-          infoEl.textContent = "Share the room code above with the other player.";
+          const joined = latestPublic.seats.filter(Boolean).length;
+          const total = latestPublic.seats.length;
+          setStatus("connecting", `Waiting for players… (${joined} of ${total})`);
+          infoEl.textContent = "Share the room code above with the other players.";
           return;
         }
         if (latestMyHand === null) return;
@@ -915,7 +953,8 @@
         infoEl.innerHTML = `
           Turn <b>${state.turnCount}</b> — <b>${current.name}</b>'s turn${isMyTurn ? " (you)" : ""}<br>
           Active: <b>${state.activeSuit || "—"}</b> ${state.activeNumber ?? ""}<br>
-          Draw pile: ${state.drawPile.length} · Your hand: ${me.hand.length} · Their hand: ${state.players[1 - MY_PLAYER_INDEX].hand.length}<br>
+          Draw pile: ${state.drawPile.length} · Your hand: ${me.hand.length}<br>
+          ${state.players.filter((p, i) => i !== MY_PLAYER_INDEX).map(p => `${p.name}: ${p.hand.length}`).join(" · ")}<br>
           Blessings: ${me.blessings}${extras}
         `;
 
