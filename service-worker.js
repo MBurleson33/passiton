@@ -5,7 +5,7 @@
 // Bump CACHE_NAME whenever you change any cached file so
 // returning players get the update instead of a stale cache.
 // ============================================================
-const CACHE_NAME = "pass-it-on-v20";
+const CACHE_NAME = "pass-it-on-v21";
 
 const ASSETS = [
   "./",
@@ -16,6 +16,8 @@ const ASSETS = [
   "js/engine.js",
   "js/ui.js",
   "js/app.js",
+  "js/online.js",
+  "js/firebase-config.js",
   "icons/icon-192.png",
   "icons/icon-512.png",
   "cards/Pass It On - Back.jpg",
