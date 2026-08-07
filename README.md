@@ -2,7 +2,7 @@
 
 A mobile-first Progressive Web App for local pass-and-play testing of
 *Pass It On*. Plain HTML/CSS/JS — no build step, so you can drop the
-folder straight into a GitHub Pages repo and it works.
+folder straight into a GitHub Pages repo and it works
 
 ## Quick start
 
