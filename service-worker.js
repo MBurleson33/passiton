@@ -2,10 +2,10 @@
 // Pass It On — Service Worker
 // Caches the app shell and card artwork on first load so the
 // game works offline afterward (Section 18 of the brief).
-// Bump CACHE_NAME whenever you change any cached file so
-// returning players get the update instead of a stale cache.
+// Code files are network-first (see fetch handler), so updates
+// arrive automatically; bump CACHE_NAME only when card art changes.
 // ============================================================
-const CACHE_NAME = "pass-it-on-v21";
+const CACHE_NAME = "pass-it-on-v22";
 
 const ASSETS = [
   "./",
@@ -88,16 +88,30 @@ self.addEventListener("fetch", event => {
     return;
   }
 
+  // App code (HTML/JS/CSS/manifest) is network-first, so a new
+  // version shows up on the next launch without needing to bump the
+  // cache or clear anything — the cache is only the offline fallback.
+  // Card art and fonts rarely change, so they stay cache-first.
+  const isCode = /\.(html|js|css|webmanifest)$/.test(url.pathname) || url.pathname.endsWith("/");
+  const saveCopy = response => {
+    if (event.request.method === "GET" && response.ok) {
+      const copy = response.clone();
+      caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
+    }
+    return response;
+  };
+
+  if (isCode && !isGoogleFonts) {
+    event.respondWith(
+      fetch(event.request).then(saveCopy).catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request).then(cached => {
       if (cached) return cached;
-      return fetch(event.request).then(response => {
-        if (event.request.method === "GET" && response.ok) {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
-        }
-        return response;
-      }).catch(() => cached);
+      return fetch(event.request).then(saveCopy).catch(() => cached);
     })
   );
 });

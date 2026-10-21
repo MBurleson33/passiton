@@ -24,6 +24,7 @@
     <button class="btn btn-gold btn-lg" id="new-game-btn">New Game</button>
     <button class="btn btn-lg" id="play-online-btn">Play Online</button>
     <button class="btn btn-lg" id="resume-game-btn" style="display:none">Resume Game</button>
+    <button class="btn btn-lg" id="rejoin-online-btn" style="display:none">Rejoin Online Game</button>
   </div>
 </section>
 
@@ -52,6 +53,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11.5L12 4l8 7.5"/><path d="M6 10v9a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-9"/><path d="M10 20v-5h4v5"/></svg>
       </button>
       <span class="turn-badge">Turn <span id="turn-count">1</span></span>
+      <span class="turn-badge room-badge" id="room-code-tag" title="Room code" style="display:none"></span>
     </div>
     <div class="header-center">
       <span class="current-player-tag"><svg class="tag-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="13" height="17" rx="2.5" transform="rotate(-8 9.5 15.5)"/><rect x="8" y="3" width="13" height="17" rx="2.5"/></svg> <span id="current-player-name"></span></span>
@@ -90,7 +92,7 @@
 
   <footer class="hand-footer">
     <div class="hand-header">
-      <span>Your hand</span>
+      <span id="hand-label">Your hand</span>
       <span class="my-blessings"><svg class="sparkle-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.2 7.8L22 12l-7.8 2.2L12 22l-2.2-7.8L2 12l7.8-2.2z"/></svg> <span id="my-blessings">0</span> Blessings</span>
     </div>
     <div class="hand-scroll" id="player-hand"></div>
@@ -131,67 +133,36 @@
 <section id="online-lobby-screen" class="screen">
   <div class="setup-wrap">
     <h2>Play Online</h2>
-    <button class="btn btn-gold btn-lg" id="online-host-btn">Host a New Game</button>
-    <div id="online-count-picker" style="display:none;">
-      <label class="field-label">Number of players</label>
-      <div class="player-count-row" id="online-count-row">
-        <button type="button" class="count-btn" data-count="2">2</button>
-        <button type="button" class="count-btn active" data-count="3">3</button>
-        <button type="button" class="count-btn" data-count="4">4</button>
-        <button type="button" class="count-btn" data-count="5">5</button>
-        <button type="button" class="count-btn" data-count="6">6</button>
+    <div id="online-join-panel">
+      <label class="field-label" for="online-name">Your name</label>
+      <input type="text" id="online-name" maxlength="16" placeholder="Your name" class="name-field" autocomplete="nickname" />
+      <button class="btn btn-gold btn-lg" id="online-host-btn">Host a New Game</button>
+      <div id="online-count-picker" style="display:none;">
+        <label class="field-label">Number of players</label>
+        <div class="player-count-row" id="online-count-row">
+          <button type="button" class="count-btn" data-count="2">2</button>
+          <button type="button" class="count-btn" data-count="3">3</button>
+          <button type="button" class="count-btn" data-count="4">4</button>
+          <button type="button" class="count-btn" data-count="5">5</button>
+          <button type="button" class="count-btn" data-count="6">6</button>
+        </div>
+      </div>
+      <p class="or-divider">— or —</p>
+      <label class="field-label" for="online-join-code">Join with a code</label>
+      <div class="player-name-row">
+        <input type="text" id="online-join-code" maxlength="4" placeholder="CODE" class="join-code-field" autocapitalize="characters" autocomplete="off" />
+        <button class="btn" id="online-join-btn" style="width:auto;">Join</button>
       </div>
     </div>
-    <p class="or-divider">— or —</p>
-    <label class="field-label">Join with a code</label>
-    <div class="player-name-row">
-      <input type="text" id="online-join-code" maxlength="4" placeholder="CODE" class="join-code-field" />
-      <button class="btn" id="online-join-btn" style="width:auto;">Join</button>
+    <div id="online-waiting" style="display:none;">
+      <p class="waiting-label">Room code</p>
+      <div class="waiting-code" id="online-waiting-code">----</div>
+      <button class="btn" id="online-copy-code">Share invite</button>
+      <ol class="seat-list" id="online-seat-list"></ol>
     </div>
     <div id="online-lobby-status" class="online-lobby-status"></div>
     <button class="btn" id="online-back-btn" style="margin-top:24px;">Back to Home</button>
   </div>
-</section>
-
-<!-- ONLINE GAME SCREEN -->
-<section id="online-game-screen" class="screen">
-  <header class="game-header">
-    <div class="header-left">
-      <button class="icon-btn" id="online-quit-btn" title="Quit to home">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11.5L12 4l8 7.5"/><path d="M6 10v9a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-9"/><path d="M10 20v-5h4v5"/></svg>
-      </button>
-      <span class="turn-badge">Turn <span id="online-turn-count">1</span></span>
-    </div>
-    <div class="header-center">
-      <span class="current-player-tag" id="online-room-code-tag"></span>
-    </div>
-    <div class="header-right"></div>
-  </header>
-
-  <div id="online-status-badge" class="lock-badge"></div>
-
-  <div id="online-opponents-info" class="online-opponents-info"></div>
-  <div id="online-discard-slot" class="online-discard-slot"></div>
-  <div class="active-badges online-active-badges">
-    <span id="online-active-suit-badge" class="badge">—</span>
-    <span id="online-active-number-badge" class="badge badge-number">—</span>
-  </div>
-
-  <p class="hint-text" id="online-hint-text"></p>
-
-  <div id="online-action-panel" class="online-panel"></div>
-
-  <footer class="hand-footer">
-    <div class="hand-header">
-      <span>Your hand</span>
-      <span class="my-blessings"><svg class="sparkle-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.2 7.8L22 12l-7.8 2.2L12 22l-2.2-7.8L2 12l7.8-2.2z"/></svg> <span id="online-my-blessings">0</span> Blessings</span>
-    </div>
-    <div class="hand-scroll" id="online-player-hand"></div>
-  </footer>
-
-  <button class="btn btn-gold btn-lg online-draw-btn" id="online-draw-btn" disabled>Draw a card</button>
-
-  <div id="online-log" class="game-log"></div>
 </section>
 
 <script src="js/firebase-config.js"></script>

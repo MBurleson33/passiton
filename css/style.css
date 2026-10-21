@@ -219,29 +219,44 @@ h1, h2, h3 {
 /* ---- Online mode ---- */
 .or-divider { text-align: center; color: var(--text-dim); font-size: 0.85rem; margin: 18px 0 6px; }
 .join-code-field {
+  min-width: 0;
   flex: 1; font-family: var(--font-body); font-size: 1.15rem; font-weight: 700; text-align: center;
   text-transform: uppercase; letter-spacing: 0.15em; padding: 10px 14px; border-radius: var(--radius-sm);
   border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text);
 }
 .online-lobby-status { margin-top: 16px; color: var(--text-dim); font-size: 0.88rem; text-align: center; min-height: 1.2em; }
-.online-opponents-info { text-align: center; color: var(--text-dim); font-size: 0.85rem; margin: 6px 0; }
-.online-discard-slot { display: flex; justify-content: center; margin: 10px 0; }
-.online-active-badges { justify-content: center; display: flex; gap: 8px; margin-bottom: 6px; }
-.online-panel {
-  display: none; background: var(--surface); backdrop-filter: blur(16px); border: 1px solid var(--glass-border);
-  border-radius: var(--radius); padding: 16px; margin: 10px 16px; text-align: center;
+#online-join-panel, #online-waiting { width: 100%; }
+#online-join-panel .btn-lg, #online-waiting .btn { margin-left: auto; margin-right: auto; }
+#online-waiting .btn { display: block; }
+.name-field {
+  display: block; width: 100%; box-sizing: border-box; margin: 0 0 14px;
+  font-family: var(--font-body); font-size: 1.05rem; padding: 12px 14px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text);
 }
-.online-panel p { font-size: 0.9rem; margin: 0 0 12px; color: var(--text); }
-.online-panel p.verse { font-style: italic; color: var(--text-dim); font-size: 0.82rem; }
-.online-panel .pick-row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 8px; }
-.online-panel button.pick-btn, .online-panel button:not(.pick-btn) {
-  font-family: var(--font-body); font-size: 0.85rem; font-weight: 600;
-  padding: 10px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-strong);
-  background: var(--surface-2); color: var(--text); cursor: pointer; margin: 4px;
+.name-field::placeholder, .join-code-field::placeholder { color: var(--text-dim); }
+.name-field:focus, .join-code-field:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(246,168,33,0.18); }
+.waiting-label { color: var(--text-dim); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.12em; margin: 4px 0 0; }
+.waiting-code {
+  font-family: var(--font-head); font-weight: 800; font-size: 3rem; letter-spacing: 0.22em;
+  color: var(--accent-hi); margin: 2px 0 12px; padding-left: 0.22em;
 }
-.online-panel button small { display: block; font-weight: 400; opacity: 0.75; margin-top: 3px; max-width: 200px; }
-.online-draw-btn { margin: 10px auto; max-width: 320px; }
-.online-draw-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.seat-list { list-style: none; padding: 0; margin: 18px 0 0; text-align: left; }
+.seat-list li {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin: 6px 0;
+  border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface);
+  font-weight: 600; color: var(--text);
+}
+.seat-list li em { color: var(--text-dim); font-style: normal; font-weight: 500; font-size: 0.85rem; }
+.seat-list li.open { color: var(--text-dim); font-weight: 500; border-style: dashed; }
+.seat-num {
+  display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%;
+  background: var(--surface-2); font-size: 0.8rem; color: var(--text-dim);
+}
+.seat-list li.filled .seat-num { background: linear-gradient(135deg, var(--accent-hi), var(--accent)); color: #201404; }
+.room-badge {
+  margin-left: 6px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border-strong);
+  letter-spacing: 0.12em; font-weight: 700; color: var(--accent-hi);
+}
 
 /* ---- Pass / results shared name display ---- */
 .pass-name { font-family: var(--font-head); font-size: 2rem; color: var(--accent-hi); margin: 8px 0 4px; font-weight: 800; }
@@ -421,7 +436,7 @@ h1, h2, h3 {
   width: 100%; padding-top: 10px; margin-top: 4px;
 }
 .hand-header { display: flex; justify-content: space-between; font-size: 0.82rem; color: var(--text-dim); font-weight: 500; padding: 0 14px 8px; align-items: center; }
-.my-blessings { color: var(--accent-hi); font-weight: 700; display: inline-flex; align-items: center; }
+.my-blessings { color: var(--accent-hi); font-weight: 700; display: inline-flex; align-items: center; gap: 0.3em; }
 .hand-scroll {
   display: flex; gap: 0; overflow-x: auto; overflow-y: visible; padding: 14px 18px 22px;
   align-items: flex-end; justify-content: center;

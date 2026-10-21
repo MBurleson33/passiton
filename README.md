@@ -19,6 +19,7 @@ folder straight into a GitHub Pages repo and it works
 - 2–6 player local pass-and-play, staying on one continuous game
   screen (no interstitial between turns) — opponent hands are still
   hidden as counts only.
+- 2–6 player online play, one phone per player (see below).
 - Full 112-card deck using a rarity system — see below — with all 36
   unique Number cards, 12 unique Action cards, and 6 unique Miracle
   cards, all using your real artwork.
@@ -33,7 +34,40 @@ folder straight into a GitHub Pages repo and it works
   desktop mouse-hover shows the same info for Action/Miracle cards
   without needing to click.
 - Save/resume via `localStorage`, offline support via a service
-  worker that caches the app shell, card art, and fonts.
+  worker. App code is fetched network-first (so updates show up on
+  the next launch with no cache-busting), with card art and fonts
+  served from cache.
+
+## Online play (Firebase)
+
+Tap **Play Online** on the home screen. Each phone is its own seat:
+
+1. Enter your name. One person taps **Host a New Game** and picks the
+   player count (2–6); everyone else types the 4-letter room code and
+   taps **Join**. The waiting room shows who's in, and **Share invite**
+   sends the code + link. Cards are dealt the moment every seat fills.
+2. The game uses the same table, card art, hold-to-zoom, game log and
+   effect pop-ups as pass-and-play — you only ever see your own hand.
+3. **Favor** and **Strength** light up on other people's turns and can
+   be played any time.
+4. **The Big Storm** works across devices: the chosen player gets the
+   "discard 1 card / keep my cards" choice on their own phone, and play
+   pauses until they answer.
+5. Closed the app or lost signal? Home screen → **Rejoin Online Game**.
+6. When someone wins, anyone can tap **Play Again** to deal a new game
+   to the same group in the same room.
+
+How it stays in sync (`js/online.js`): every move is saved in a
+Firestore transaction against a `rev` counter, together with your hand
+(and any card you gave someone). If a Favor/Strength lands while you're
+mid-move, your move is merged on top of it rather than overwriting it;
+anything else unexpected cancels the move and refreshes the board, so
+cards can't be lost or duplicated. Hands stay private via Security
+Rules (`games/{code}/hands/{uid}` readable only by that player).
+
+The old `sync-test.html`, `sync-game-test.html`, `hidden-hands-test.html`
+and `auth-test.html` pages are still in the repo but are no longer
+needed — the main app has everything they tested.
 
 ## Deck rarity system
 
@@ -61,7 +95,6 @@ reshuffle logic, etc.) derives from it automatically.
 A few cards' printed text changed along with the new art, so the
 mechanics now match exactly:
 
-- **Living Water** Blessing cost: 1 → 2.
 - **The Big Storm** Play ability now targets *another* player only
   (no longer yourself); Blessing cost 1 → 2, and it no longer sets
   the active suit — both players may simply discard.
@@ -165,6 +198,7 @@ icons/            — generated placeholder app icons (swap for your logo any ti
 - Swap the placeholder icons in `icons/` for your circular Pass It On
   logo.
 - Add real Number card art (see above).
-- Sound, animations, a card library/rulebook screen, and online
-  multiplayer are all deliberately out of scope for this prototype,
-  per the brief's phased build plan.
+- Sound, animations, and a card library/rulebook screen.
+- Online: no handling yet for a player who leaves for good mid-game
+  (the table waits for them). Rejoining works from the same phone and
+  browser they joined on.

@@ -1,30 +1,57 @@
 // ============================================================
 // Pass It On — Online multiplayer (Firebase/Firestore)
-// This file is a <script type="module">, loaded after ui.js and
-// engine.js. It reuses their global functions (showScreen,
-// renderCard, cardDef, canPlayCard, playNumberCard, etc.) — those
-// are plain `function` declarations in classic scripts, which do
-// attach to `window` and are safely visible here. `el`/`els` in
-// ui.js are `const`, which is NOT reliably visible across the
-// classic-script/module boundary, so this file defines its own.
+//
+// Online games run on the exact same game screen and effect modals
+// as local pass-and-play (ui.js). This file:
+//   - runs the lobby: names, hosting, joining, the waiting room,
+//     rejoining, and "Play Again" with the same group;
+//   - keeps a working copy of the game for this device (your real
+//     hand + face-down placeholders for everyone else's), and
+//     installs an adapter in ui.js so a finished move gets saved to
+//     Firestore instead of localStorage;
+//   - saves every move in a Firestore transaction.
+//
+// Data layout (unchanged from the hidden-hands tests):
+//   games/{CODE}              public state: piles, turn, blessings,
+//                             hand COUNTS, names, seats, log
+//   games/{CODE}/hands/{uid}  one player's real hand — Security
+//                             Rules let only that player read it
+//
+// Why transactions: the public doc carries a `rev` counter. A move
+// is computed locally from rev N and saved only if the doc is still
+// at rev N. The one thing that can legitimately land in between is
+// someone playing Favor/Strength out of turn — in that case the
+// move is "rebased" onto the newer state (their card, Blessing, and
+// hand count are kept alongside yours) instead of overwriting it.
+// Anything else unexpected cancels the move and refreshes the board
+// rather than losing or duplicating cards.
 // ============================================================
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.17.0/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.17.0/firebase-auth.js";
 import {
-  getFirestore, doc, setDoc, getDoc, onSnapshot, updateDoc, arrayUnion
+  getFirestore, doc, getDoc, setDoc, onSnapshot, runTransaction, arrayUnion
 } from "https://www.gstatic.com/firebasejs/12.17.0/firebase-firestore.js";
 
-const el = sel => document.querySelector(sel);
-const els = sel => Array.from(document.querySelectorAll(sel));
+const $ = sel => document.querySelector(sel);
+const ROOM_KEY = "passiton-online-room";
+const NAME_KEY = "passiton-name";
+const PLACEHOLDER = "ph-";
+const LOG_LIMIT = 150;
+const META_KEYS = ["seats", "names", "hostUid", "playerUids", "rev", "createdAt", "playerNames"];
 
-function log(msg) {
-  const logEl = el("#online-log");
-  if (!logEl) return;
-  const line = document.createElement("div");
-  line.textContent = `${new Date().toLocaleTimeString()} — ${msg}`;
-  logEl.prepend(line);
+const clone = obj => JSON.parse(JSON.stringify(obj));
+function store(key, value) {
+  try { value === null ? localStorage.removeItem(key) : localStorage.setItem(key, value); } catch (e) {}
 }
+function load(key) {
+  try { return localStorage.getItem(key); } catch (e) { return null; }
+}
+function debug(msg) { console.log(`[online] ${msg}`); }
+function lobbyStatus(msg) { $("#online-lobby-status").textContent = msg || ""; }
+
+class MoveConflict extends Error {}
+
 function generateRoomCode() {
   const chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
   let code = "";
@@ -32,724 +59,567 @@ function generateRoomCode() {
   return code;
 }
 
-if (!window.firebaseConfig || window.firebaseConfig.apiKey.startsWith("PASTE-")) {
-  el("#play-online-btn").addEventListener("click", () => {
-    alert("Online play isn't configured yet on this copy of the app.");
+// ---- Public/private split ---------------------------------------
+function metaFrom(data) {
+  return {
+    seats: data.seats,
+    names: data.names || data.seats.map((_, i) => `Player ${i + 1}`),
+    hostUid: data.hostUid || null,
+    playerUids: (data.seats || []).filter(Boolean),
+    rev: data.rev || 0,
+    createdAt: data.createdAt || Date.now()
+  };
+}
+
+function toPublic(state, meta) {
+  const { players, ...rest } = clone(state);
+  rest.gameLog = (rest.gameLog || []).slice(-LOG_LIMIT);
+  rest.prompt = rest.prompt || null;
+  rest.turnOverrideQueue = rest.turnOverrideQueue || [];
+  return {
+    ...rest,
+    players: players.map(p => ({
+      id: p.id, name: p.name, blessings: p.blessings, connected: true, handCount: p.hand.length
+    })),
+    ...meta
+  };
+}
+
+// Deals a fresh game into seats (inside a transaction). Used both
+// when the last seat fills and for "Play Again".
+function dealInto(tx, refs, latestMeta, names) {
+  const fresh = createGameState(names);
+  fresh.gameId = `g-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+  const rev = (latestMeta.rev || 0) + 1;
+  latestMeta.seats.forEach((uid, i) => {
+    tx.set(refs.hand(uid), { hand: fresh.players[i].hand, gameId: fresh.gameId, rev });
   });
+  tx.set(refs.pub, toPublic(fresh, { ...latestMeta, names, rev }));
+  return rev;
+}
+
+if (!window.firebaseConfig || window.firebaseConfig.apiKey.startsWith("PASTE-")) {
+  $("#play-online-btn").addEventListener("click", () => alert("Online play isn't configured on this copy of the app."));
+  $("#rejoin-online-btn").style.display = "none";
 } else {
   const app = initializeApp(window.firebaseConfig);
   const db = getFirestore(app);
   const auth = getAuth(app);
   let myUid = null;
-
-  onAuthStateChanged(auth, user => {
-    if (user) myUid = user.uid;
+  const authReady = new Promise(resolve => {
+    onAuthStateChanged(auth, user => { if (user) { myUid = user.uid; resolve(); } });
   });
-  signInAnonymously(auth).catch(err => console.warn("Online sign-in failed:", err));
-
-  el("#play-online-btn").addEventListener("click", () => {
-    showScreen("online-lobby-screen");
-    el("#online-lobby-status").textContent = "";
-  });
-  el("#online-back-btn").addEventListener("click", () => showScreen("home-screen"));
-
-  el("#online-host-btn").addEventListener("click", () => {
-    el("#online-host-btn").style.display = "none";
-    el("#online-count-picker").style.display = "block";
-  });
-  // Tapping a count both selects it and immediately hosts a room —
-  // no separate confirm step needed for a single number choice.
-  els("#online-count-row .count-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const n = parseInt(btn.dataset.count, 10);
-      const code = generateRoomCode();
-      startOnlineGame(code, true, n);
-    });
+  signInAnonymously(auth).catch(err => {
+    console.warn("Online sign-in failed:", err);
+    lobbyStatus("Couldn't connect to the game server — check your internet connection.");
   });
 
-  el("#online-join-btn").addEventListener("click", () => {
-    const code = el("#online-join-code").value.trim().toUpperCase();
-    if (!code) return;
-    startOnlineGame(code, false);
+  const refsFor = code => ({
+    pub: doc(db, "games", code),
+    hand: uid => doc(db, "games", code, "hands", uid)
   });
 
-  async function startOnlineGame(roomId, isHost, maxPlayers) {
-    if (!myUid) {
-      el("#online-lobby-status").textContent = "Still connecting — try again in a second.";
-      return;
+  // ---- Lobby ----------------------------------------------------
+  function myName() {
+    const typed = $("#online-name").value.replace(/[<>&"']/g, "").trim().slice(0, 16);
+    if (typed) store(NAME_KEY, typed);
+    return typed;
+  }
+  function requireName() {
+    const name = myName();
+    if (!name) {
+      lobbyStatus("Enter your name first.");
+      $("#online-name").focus();
+      return null;
     }
-    el("#online-lobby-status").textContent = isHost ? "Creating room…" : "Joining…";
+    return name;
+  }
+  function openLobby() {
+    showScreen("online-lobby-screen");
+    $("#online-name").value = load(NAME_KEY) || "";
+    $("#online-join-panel").style.display = "block";
+    $("#online-waiting").style.display = "none";
+    $("#online-host-btn").style.display = "block";
+    $("#online-count-picker").style.display = "none";
+    lobbyStatus("");
+  }
 
-    const publicRef = doc(db, "games", roomId);
-    const myHandRef = doc(db, "games", roomId, "hands", myUid);
-    const handRef = uid => doc(db, "games", roomId, "hands", uid);
+  $("#play-online-btn").addEventListener("click", openLobby);
+  $("#online-back-btn").addEventListener("click", () => {
+    if (ROOM) leaveRoom(false);
+    else { showScreen("home-screen"); initHomeScreen(); }
+  });
+  $("#online-host-btn").addEventListener("click", () => {
+    if (!requireName()) return;
+    $("#online-host-btn").style.display = "none";
+    $("#online-count-picker").style.display = "block";
+    lobbyStatus("How many players?");
+  });
+  document.querySelectorAll("#online-count-row .count-btn").forEach(btn => {
+    btn.addEventListener("click", () => hostRoom(parseInt(btn.dataset.count, 10)));
+  });
+  $("#online-join-btn").addEventListener("click", () => {
+    const code = $("#online-join-code").value.trim().toUpperCase();
+    if (!code) { lobbyStatus("Enter the 4-letter room code."); return; }
+    if (!requireName()) return;
+    joinRoom(code);
+  });
+  $("#online-join-code").addEventListener("keydown", e => { if (e.key === "Enter") $("#online-join-btn").click(); });
+  $("#rejoin-online-btn").addEventListener("click", () => {
+    const code = load(ROOM_KEY);
+    if (!code) return;
+    openLobby();
+    joinRoom(code, { rejoin: true });
+  });
+  $("#online-copy-code").addEventListener("click", () => {
+    if (!ROOM) return;
+    const text = `Join my Pass It On game — room code ${ROOM.code}\n${location.href.split("#")[0]}`;
+    if (navigator.share) navigator.share({ text }).catch(() => {});
+    else if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => lobbyStatus("Invite copied — paste it to your group."));
+  });
 
-    let MY_PLAYER_INDEX = -1;
-    let latestPublic = null;
-    let latestMyHand = null;
-    let currentState = null;
-    let actionPending = false;
-    let pendingAfterCard = null;
-
+  async function hostRoom(maxPlayers) {
+    const name = requireName();
+    if (!name) return;
+    lobbyStatus("Creating room…");
     try {
-      if (isHost) {
-        log(`Creating a ${maxPlayers}-player room…`);
-        const seats = new Array(maxPlayers).fill(null);
-        seats[0] = myUid;
-        await setDoc(publicRef, {
-          status: "waiting",
-          seats,
-          playerUids: [myUid],
-          playerNames: seats.map((_, i) => `Player ${i + 1}`)
-        });
-      } else {
-        log("Joining…");
-        const snap = await getDoc(publicRef);
+      await authReady;
+      let code = null;
+      for (let tries = 0; tries < 6 && !code; tries++) {
+        const candidate = generateRoomCode();
+        const snap = await getDoc(refsFor(candidate).pub);
+        if (!snap.exists() || snap.data().status === "finished") code = candidate;
+      }
+      if (!code) throw new Error("Couldn't find a free room code — try again.");
+      const seats = new Array(maxPlayers).fill(null);
+      const names = seats.map((_, i) => `Player ${i + 1}`);
+      seats[0] = myUid;
+      names[0] = name;
+      await setDoc(refsFor(code).pub, {
+        status: "waiting", seats, names, hostUid: myUid, playerUids: [myUid], rev: 0, createdAt: Date.now()
+      });
+      enterRoom(code);
+    } catch (err) {
+      lobbyStatus(`Error: ${err.message}`);
+    }
+  }
+
+  async function joinRoom(code, opts = {}) {
+    lobbyStatus(opts.rejoin ? `Rejoining ${code}…` : "Joining…");
+    try {
+      await authReady;
+      const name = myName() || load(NAME_KEY) || "";
+      const refs = refsFor(code);
+      await runTransaction(db, async tx => {
+        const snap = await tx.get(refs.pub);
         if (!snap.exists()) throw new Error("Room not found — check the code.");
         const data = snap.data();
-        const seats = data.seats.slice();
-
-        if (!seats.includes(myUid)) {
-          const openIndex = seats.indexOf(null);
-          if (openIndex === -1) throw new Error("This room is already full.");
-          seats[openIndex] = myUid;
-          await setDoc(publicRef, { seats, playerUids: arrayUnion(myUid) }, { merge: true });
-          log(`Claimed seat ${openIndex + 1} of ${seats.length}.`);
-        } else {
-          log("Reconnected to my existing seat.");
+        const meta = metaFrom(data);
+        const seats = meta.seats.slice();
+        const names = meta.names.slice();
+        let idx = seats.indexOf(myUid);
+        if (idx === -1) {
+          if (data.status !== "waiting") throw new Error("That game has already started.");
+          idx = seats.indexOf(null);
+          if (idx === -1) throw new Error("This room is already full.");
+          seats[idx] = myUid;
         }
-
+        if (data.status === "waiting" && name) names[idx] = name;
+        const newMeta = { ...meta, seats, names, playerUids: seats.filter(Boolean) };
         if (data.status === "waiting" && !seats.includes(null)) {
-          log(`All ${seats.length} players present — dealing the game…`);
-          const names = seats.map((_, i) => `Player ${i + 1}`);
-          const fresh = createGameState(names);
-          for (let i = 0; i < seats.length; i++) {
-            await setDoc(handRef(seats[i]), { hand: fresh.players[i].hand });
-          }
-          const { players, ...publicRest } = fresh;
-          const publicPlayers = players.map(p => ({
-            id: p.id, name: p.name, blessings: p.blessings, connected: true, handCount: p.hand.length
-          }));
-          await setDoc(publicRef, {
-            ...publicRest, players: publicPlayers, status: "playing", seats, playerUids: seats
-          }, { merge: true });
-          log("Dealt — game started.");
+          dealInto(tx, refs, newMeta, names);
+        } else if (data.status === "waiting") {
+          tx.set(refs.pub, { ...data, ...newMeta });
         }
-      }
+      });
+      enterRoom(code);
     } catch (err) {
-      el("#online-lobby-status").textContent = `Error: ${err.message}`;
-      log(`Error: ${err.code || err.message}`);
-      return;
+      if (opts.rejoin && /not found/i.test(err.message)) store(ROOM_KEY, null);
+      lobbyStatus(err.message);
     }
-
-    showScreen("online-game-screen");
-    el("#online-room-code-tag").textContent = `Room ${roomId}`;
-
-    function buildWorkingState() {
-      if (!latestPublic || latestPublic.status === "waiting") return null;
-      const seats = latestPublic.seats;
-      MY_PLAYER_INDEX = seats.indexOf(myUid);
-      if (MY_PLAYER_INDEX === -1) return null;
-      const { players: publicPlayers, ...rest } = latestPublic;
-      const state = JSON.parse(JSON.stringify(rest));
-      state.players = publicPlayers.map((p, i) => {
-        if (i === MY_PLAYER_INDEX) {
-          return { id: p.id, name: p.name, blessings: p.blessings, connected: p.connected, hand: (latestMyHand || []).slice() };
-        }
-        const placeholder = [];
-        for (let k = 0; k < p.handCount; k++) placeholder.push({ uid: `placeholder-${i}-${k}`, defId: "faith-1" });
-        return { id: p.id, name: p.name, blessings: p.blessings, connected: p.connected, hand: placeholder };
-      });
-      return state;
-    }
-
-    async function pushSplitState(state) {
-      try {
-        await setDoc(myHandRef, { hand: state.players[MY_PLAYER_INDEX].hand });
-        const { players, ...rest } = state;
-        const publicPlayers = players.map(p => ({
-          id: p.id, name: p.name, blessings: p.blessings, connected: p.connected, handCount: p.hand.length
-        }));
-        await setDoc(publicRef, { ...rest, players: publicPlayers, seats: latestPublic.seats, playerUids: latestPublic.playerUids }, { merge: false });
-        return true;
-      } catch (err) {
-        log(`Error saving state: ${err.code || ""} ${err.message}`);
-        return false;
-      }
-    }
-    async function giveCardTo(targetUid, card) {
-      try {
-        await updateDoc(handRef(targetUid), { hand: arrayUnion(card) });
-      } catch (err) {
-        log(`Error giving card: ${err.code || ""} ${err.message}`);
-      }
-    }
-
-    function lockControls() {
-      actionPending = true;
-      el("#online-draw-btn").disabled = true;
-      el("#online-player-hand").querySelectorAll(".card").forEach(c => { c.style.pointerEvents = "none"; });
-    }
-    function showActionPanel(html) {
-      const p = el("#online-action-panel");
-      p.innerHTML = html;
-      p.style.display = "block";
-      el("#online-player-hand").style.display = "none";
-      el("#online-draw-btn").style.display = "none";
-    }
-    function hideActionPanel() {
-      const p = el("#online-action-panel");
-      p.style.display = "none";
-      p.innerHTML = "";
-      el("#online-player-hand").style.display = "flex";
-      el("#online-draw-btn").style.display = "block";
-    }
-    function pickButtons(description, items, labelFn, onPick, opts = {}) {
-      const isCardList = items.length > 0 && items[0] && items[0].defId !== undefined;
-      const panel = el("#online-action-panel");
-      panel.innerHTML = `<p>${description}</p>`;
-      const row = document.createElement("div");
-      row.className = "pick-row";
-      items.forEach(item => {
-        if (isCardList) {
-          const cardEl = renderCard(item, { size: "small", legal: true });
-          cardEl.addEventListener("click", () => onPick(item));
-          row.appendChild(cardEl);
-        } else {
-          const btn = document.createElement("button");
-          btn.className = "pick-btn";
-          btn.textContent = labelFn(item);
-          btn.addEventListener("click", () => onPick(item));
-          row.appendChild(btn);
-        }
-      });
-      panel.appendChild(row);
-      if (opts.skipLabel) {
-        const skipBtn = document.createElement("button");
-        skipBtn.textContent = opts.skipLabel;
-        skipBtn.addEventListener("click", opts.onSkip);
-        panel.appendChild(skipBtn);
-      }
-      panel.style.display = "block";
-      el("#online-player-hand").style.display = "none";
-      el("#online-draw-btn").style.display = "none";
-    }
-    const SUITS_LOCAL = ["Faith", "Hope", "Love", "Service", "Prayer", "Word"];
-    const SUIT_COLORS_LOCAL = {
-      Faith: "#1d4e89", Hope: "#a68a1c", Love: "#a5253f",
-      Service: "#c1622d", Prayer: "#5b7a3a", Word: "#4b3f9e"
-    };
-    function pickSuit(description, onPick) {
-      const panel = el("#online-action-panel");
-      panel.innerHTML = `<p>${description}</p>`;
-      const row = document.createElement("div");
-      row.className = "pick-row";
-      SUITS_LOCAL.forEach(s => {
-        const btn = document.createElement("button");
-        btn.className = "pick-btn";
-        btn.style.borderColor = SUIT_COLORS_LOCAL[s];
-        btn.textContent = s;
-        btn.addEventListener("click", () => onPick(s));
-        row.appendChild(btn);
-      });
-      panel.appendChild(row);
-      panel.style.display = "block";
-      el("#online-player-hand").style.display = "none";
-      el("#online-draw-btn").style.display = "none";
-    }
-
-    function consumePendingAfterCard() {
-      if (pendingAfterCard) { const fn = pendingAfterCard; pendingAfterCard = null; fn(); return true; }
-      return false;
-    }
-    function finishTurn() {
-      if (consumePendingAfterCard()) return;
-      hideActionPanel();
-      advanceTurn(currentState);
-      pushSplitState(currentState);
-    }
-    function finishMiracleTurn() {
-      if (pendingAfterCard) { pendingAfterCard = null; }
-      hideActionPanel();
-      endTurnWithFreePlay(currentState);
-      pushSplitState(currentState);
-    }
-    function handleEffectResult(result) {
-      if (!result) return;
-      if (result.won) { pushSplitState(currentState); return; }
-      if (result.error) { alert(result.error); return; }
-      if (!result.needsInput) {
-        if (result.miracle) {
-          if (MY_PLAYER_INDEX === currentState.currentPlayerIndex) finishMiracleTurn();
-          else { hideActionPanel(); pushSplitState(currentState); }
-        } else {
-          finishTurn();
-        }
-        return;
-      }
-      routeNeedsInput(result);
-    }
-    function playExtraCard(card, onResult) {
-      const def = cardDef(card);
-      const me = currentState.players[MY_PLAYER_INDEX];
-      if (def.type === "action" && def.blessingCost > 0 && me.blessings >= def.blessingCost) {
-        showActionPanel(`
-          <p><b>${def.name}</b></p><p class="verse">${def.verse}</p>
-          <button id="choice-play">Play<br><small>${def.playText}</small></button>
-          <button id="choice-blessing">Spend ${def.blessingCost} Blessing${def.blessingCost > 1 ? "s" : ""}<br><small>${def.blessingText}</small></button>
-        `);
-        el("#choice-play").onclick = () => onResult(playHandCardDirect(currentState, me.id, card, false));
-        el("#choice-blessing").onclick = () => onResult(playHandCardDirect(currentState, me.id, card, true));
-        return;
-      }
-      onResult(playHandCardDirect(currentState, me.id, card, false));
-    }
-
-    function routeNeedsInput(result) {
-      const handlers = {
-        five_stones_keep: panelFiveStonesKeep,
-        five_stones_play: panelFiveStonesPlay,
-        living_water_discard: panelLivingWaterDiscard,
-        loaves_and_fish_choose: panelLoavesAndFishChoose,
-        mustard_seed_extra: r => promptMustardSeedCard(r.count),
-        choose_suit_then_maybe_exchange: panelBigFish,
-        big_storm_choose_target: panelBigStorm,
-        empty_tomb_choose_card: panelEmptyTomb,
-        good_samaritan_give: panelGoodSamaritan,
-        good_shepherd_choose: panelGoodShepherdChoose,
-        tree_climber_reorder: panelTreeClimber,
-        two_coins_give: panelTwoCoins,
-        walk_on_water_choose: panelWalkOnWater,
-        choose_suit: panelChooseSuit,
-        redeemed_choose_card: panelRedeemedChoose,
-        overflow_discard: panelOverflow
-      };
-      const fn = handlers[result.needsInput];
-      if (fn) fn(result); else finishTurn();
-    }
-
-    function panelFiveStonesKeep(result) {
-      const me = currentState.players[MY_PLAYER_INDEX];
-      if (result.revealed.length === 0) { finishTurn(); return; }
-      pickButtons("Five Stones — choose 1 card to keep. The rest return to the draw pile.",
-        result.revealed, c => cardDef(c).name, card => {
-          me.hand.push(card);
-          const rest = result.revealed.filter(r => r.uid !== card.uid);
-          currentState.drawPile.unshift(...shuffle(rest));
-          finishTurn();
-        });
-    }
-    function panelFiveStonesPlay(result) {
-      const me = currentState.players[MY_PLAYER_INDEX];
-      if (result.revealed.length === 0) { finishTurn(); return; }
-      if (result.playable.length === 0) {
-        showActionPanel(`
-          <p>Five Stones (Blessing) — none of the 5 revealed cards can be played. Add one to your hand, or return all five?</p>
-          <button id="fs-keep-one">Keep 1 in hand</button>
-          <button id="fs-return-all">Return all 5</button>
-        `);
-        el("#fs-keep-one").onclick = () => {
-          me.hand.push(result.revealed[0]);
-          currentState.drawPile.unshift(...shuffle(result.revealed.slice(1)));
-          finishTurn();
-        };
-        el("#fs-return-all").onclick = () => {
-          currentState.drawPile.unshift(...shuffle(result.revealed));
-          finishTurn();
-        };
-        return;
-      }
-      pickButtons("Five Stones (Blessing) — choose 1 legal card to play immediately.",
-        result.playable, c => cardDef(c).name, card => {
-          const rest = result.revealed.filter(r => r.uid !== card.uid);
-          currentState.drawPile.unshift(...shuffle(rest));
-          playExtraCard(card, handleEffectResult);
-        });
-    }
-    function panelLivingWaterDiscard(result) {
-      const me = currentState.players[MY_PLAYER_INDEX];
-      if (me.hand.length === 0) { finishTurn(); return; }
-      pickButtons("Living Water — choose 1 card from your hand to place on the bottom of the draw pile.",
-        me.hand.slice(), c => cardDef(c).name, card => {
-          me.hand = me.hand.filter(h => h.uid !== card.uid);
-          currentState.drawPile.push(card);
-          if (checkWin(currentState, me.id)) { pushSplitState(currentState); return; }
-          if (result.extraPlay) promptOptionalPlay(() => finishTurn());
-          else finishTurn();
-        });
-    }
-    function panelLoavesAndFishChoose(result) {
-      if (result.playable.length === 0) {
-        currentState.drawPile.unshift(...shuffle(result.revealed));
-        finishTurn();
-        return;
-      }
-      pickButtons("Loaves & Fish — choose a legal card to play immediately.",
-        result.playable, c => cardDef(c).name, card => {
-          const rest = result.revealed.filter(r => r.uid !== card.uid);
-          currentState.drawPile.unshift(...shuffle(rest));
-          playExtraCard(card, handleEffectResult);
-        });
-    }
-    function promptMustardSeedCard(remaining) {
-      if (remaining <= 0) { finishTurn(); return; }
-      const me = currentState.players[MY_PLAYER_INDEX];
-      const legalCards = me.hand.filter(c => canPlayCard(c, currentState, me.id));
-      if (legalCards.length === 0) {
-        showActionPanel(`<p>Mustard Seed — no card in your hand can legally be played right now.</p><button id="ms-skip">Continue</button>`);
-        el("#ms-skip").onclick = () => promptMustardSeedCard(0);
-        return;
-      }
-      pickButtons(`Mustard Seed — play ${remaining > 1 ? remaining + " additional cards" : "1 additional card"} from your hand.`,
-        legalCards, c => cardDef(c).name, card => {
-          me.hand = me.hand.filter(h => h.uid !== card.uid);
-          pendingAfterCard = () => promptMustardSeedCard(remaining - 1);
-          playExtraCard(card, handleEffectResult);
-        });
-    }
-    function panelBigFish(result) {
-      pickSuit("The Big Fish — choose the active suit.", suit => {
-        currentState.activeSuit = suit;
-        if (result.exchange) doExchangeWithDrawPile();
-        else finishTurn();
-      });
-    }
-    function doExchangeWithDrawPile() {
-      const me = currentState.players[MY_PLAYER_INDEX];
-      if (currentState.drawPile.length === 0) { finishTurn(); return; }
-      pickButtons("Exchange — choose 1 card from your hand to swap with the top of the draw pile.",
-        me.hand.slice(), c => cardDef(c).name, card => {
-          const top = currentState.drawPile.shift();
-          me.hand = me.hand.filter(h => h.uid !== card.uid);
-          me.hand.push(top);
-          currentState.drawPile.unshift(card);
-          finishTurn();
-        });
-    }
-    function panelBigStorm(result) {
-      const me = currentState.players[MY_PLAYER_INDEX];
-      const others = currentState.players.filter(p => p.id !== me.id);
-      if (result.mode === "single") {
-        pickButtons("The Big Storm — choose another player.", others, p => p.name, target => {
-          log(`(Simplified) The Big Storm targeted ${target.name} — their discard isn't implemented in online play yet.`);
-          finishTurn();
-        });
-      } else {
-        pickButtons("The Big Storm (Blessing) — choose another player. You may discard 1 card.", others, p => p.name, target => {
-          promptDiscardSelf(() => {
-            log(`(Simplified) The Big Storm targeted ${target.name} — their discard isn't implemented in online play yet.`);
-            finishTurn();
-          });
-        });
-      }
-    }
-    function promptDiscardSelf(onDone) {
-      const me = currentState.players[MY_PLAYER_INDEX];
-      if (me.hand.length === 0) { onDone(); return; }
-      pickButtons("Discard a card (or skip).", me.hand.slice(), c => cardDef(c).name, card => {
-        me.hand = me.hand.filter(h => h.uid !== card.uid);
-        currentState.discardPile.push(card);
-        if (checkWin(currentState, me.id)) { pushSplitState(currentState); return; }
-        onDone();
-      }, { skipLabel: "Skip", onSkip: onDone });
-    }
-    function panelEmptyTomb(result) {
-      const me = currentState.players[MY_PLAYER_INDEX];
-      const belowTop = currentState.discardPile.slice(0, -1);
-      if (belowTop.length === 0) { finishTurn(); return; }
-      pickButtons("The Empty Tomb — choose any 1 card from the discard pile.",
-        belowTop, c => cardDef(c).name, card => {
-          currentState.discardPile = currentState.discardPile.filter(d => d.uid !== card.uid);
-          if (result.mode === "take") {
-            me.hand.push(card);
-            if (checkWin(currentState, me.id)) { pushSplitState(currentState); return; }
-            finishTurn();
-          } else {
-            playExtraCard(card, handleEffectResult);
-          }
-        });
-    }
-    function panelGoodSamaritan(result) {
-      const me = currentState.players[MY_PLAYER_INDEX];
-      const others = currentState.players.filter(p => p.id !== me.id);
-      pickButtons("The Good Samaritan — choose a player to give a card to.",
-        others, p => p.name, target => {
-          pickButtons(`Give a card to ${target.name}.`, me.hand.slice(), c => cardDef(c).name, async card => {
-            me.hand = me.hand.filter(h => h.uid !== card.uid);
-            target.hand.push(card);
-            await giveCardTo(latestPublic.seats[currentState.players.indexOf(target)], card);
-            if (checkWin(currentState, me.id)) { pushSplitState(currentState); return; }
-            if (result.mode === "normal") finishTurn();
-            else promptOptionalPlay(() => finishTurn());
-          });
-        });
-    }
-    function panelTwoCoins(result) {
-      const me = currentState.players[MY_PLAYER_INDEX];
-      const others = currentState.players.filter(p => p.id !== me.id);
-      pickButtons("Two Coins — choose a player to give a card to.",
-        others, p => p.name, target => {
-          pickButtons(`Give a card to ${target.name}.`, me.hand.slice(), c => cardDef(c).name, async card => {
-            me.hand = me.hand.filter(h => h.uid !== card.uid);
-            target.hand.push(card);
-            await giveCardTo(latestPublic.seats[currentState.players.indexOf(target)], card);
-            if (checkWin(currentState, me.id)) { pushSplitState(currentState); return; }
-            if (result.mode === "normal") {
-              me.blessings += 1;
-              finishTurn();
-            } else {
-              pickSuit("Choose the active suit.", suit => {
-                currentState.activeSuit = suit;
-                finishTurn();
-              });
-            }
-          });
-        });
-    }
-    function panelGoodShepherdChoose(result) {
-      const me = currentState.players[MY_PLAYER_INDEX];
-      if (result.revealed.length === 0) { finishTurn(); return; }
-      pickButtons("The Good Shepherd (Blessing) — choose 1 card to put into your hand.",
-        result.revealed, c => cardDef(c).name, card => {
-          currentState.discardPile = currentState.discardPile.filter(d => d.uid !== card.uid);
-          me.hand.push(card);
-          if (checkWin(currentState, me.id)) { pushSplitState(currentState); return; }
-          finishTurn();
-        });
-    }
-    function panelTreeClimber(result) {
-      if (result.revealed.length === 0) { finishTurn(); return; }
-      showActionPanel(`
-        <p>Tree Climber — looked at: ${result.revealed.map(c => cardDef(c).name).join(", ")}.
-        (Reordering is simplified in online play — returned in the order revealed.)</p>
-        <button id="tc-confirm">Continue</button>
-      `);
-      el("#tc-confirm").onclick = () => {
-        currentState.drawPile.unshift(...result.revealed);
-        finishTurn();
-      };
-    }
-    function panelWalkOnWater(result) {
-      const me = currentState.players[MY_PLAYER_INDEX];
-      pickButtons("Walk On Water — play any 1 card from your hand, regardless of suit or number.",
-        me.hand.slice(), c => cardDef(c).name, card => {
-          me.hand = me.hand.filter(h => h.uid !== card.uid);
-          if (result.pickNext) pendingAfterCard = () => panelPickNextPlayer();
-          playExtraCard(card, handleEffectResult);
-        });
-    }
-    function panelPickNextPlayer() {
-      const me = currentState.players[MY_PLAYER_INDEX];
-      pickButtons("Walk On Water (Blessing) — pick who plays next.",
-        currentState.players, p => p.id === me.id ? `${p.name} (yourself)` : p.name, p => {
-          currentState.turnOverrideQueue.push(p.id);
-          finishTurn();
-        });
-    }
-    function panelChooseSuit(result) {
-      pickSuit("Wisdom — choose the active suit.", suit => {
-        currentState.activeSuit = suit;
-        currentState.activeNumber = null;
-        finishTurn();
-      });
-    }
-    function panelRedeemedChoose(result) {
-      const me = currentState.players[MY_PLAYER_INDEX];
-      const belowTop = currentState.discardPile.slice(0, -1);
-      if (belowTop.length === 0) { finishMiracleTurn(); return; }
-      pickButtons("Redeemed — return 1 card from the discard pile to your hand.",
-        belowTop, c => cardDef(c).name, card => {
-          currentState.discardPile = currentState.discardPile.filter(d => d.uid !== card.uid);
-          me.hand.push(card);
-          finishMiracleTurn();
-        });
-    }
-    function panelOverflow(result) {
-      const me = currentState.players[MY_PLAYER_INDEX];
-      const selected = new Set();
-      function draw() {
-        const panel = el("#online-action-panel");
-        panel.innerHTML = `<p>Overflow — select any number of cards to discard, then draw that many.</p>`;
-        const row = document.createElement("div");
-        row.className = "pick-row";
-        me.hand.forEach(c => {
-          const cardEl = renderCard(c, { size: "small", legal: selected.has(c.uid) });
-          cardEl.addEventListener("click", () => {
-            if (selected.has(c.uid)) selected.delete(c.uid); else selected.add(c.uid);
-            draw();
-          });
-          row.appendChild(cardEl);
-        });
-        panel.appendChild(row);
-        const confirmBtn = document.createElement("button");
-        confirmBtn.textContent = `Confirm (${selected.size} selected)`;
-        confirmBtn.addEventListener("click", () => {
-          const toDiscard = me.hand.filter(c => selected.has(c.uid));
-          me.hand = me.hand.filter(c => !selected.has(c.uid));
-          currentState.discardPile.push(...toDiscard);
-          drawCard(currentState, me.id, toDiscard.length);
-          if (checkWin(currentState, me.id)) { pushSplitState(currentState); return; }
-          finishMiracleTurn();
-        });
-        panel.appendChild(confirmBtn);
-        panel.style.display = "block";
-        el("#online-player-hand").style.display = "none";
-        el("#online-draw-btn").style.display = "none";
-      }
-      draw();
-    }
-    function promptOptionalPlay(onDone) {
-      const me = currentState.players[MY_PLAYER_INDEX];
-      const legalCards = me.hand.filter(c => canPlayCard(c, currentState, me.id) || canPlayCardIgnoringTurn(c, currentState));
-      if (legalCards.length === 0) { onDone(); return; }
-      pickButtons(`${me.name} may play 1 card (or skip).`,
-        legalCards, c => cardDef(c).name, card => {
-          me.hand = me.hand.filter(h => h.uid !== card.uid);
-          playExtraCard(card, handleEffectResult);
-        }, { skipLabel: "Skip", onSkip: onDone });
-    }
-
-    function onCardClick(card) {
-      const me = currentState.players[MY_PLAYER_INDEX];
-      const def = cardDef(card);
-      if (def.type === "number") {
-        const result = playNumberCard(currentState, me.id, card.uid);
-        if (result.won) { pushSplitState(currentState); return; }
-        finishTurn();
-        return;
-      }
-      if (def.type === "action") {
-        if (me.blessings >= def.blessingCost && def.blessingCost > 0) {
-          showActionPanel(`
-            <p><b>${def.name}</b></p><p class="verse">${def.verse}</p>
-            <button id="choice-play">Play<br><small>${def.playText}</small></button>
-            <button id="choice-blessing">Spend ${def.blessingCost} Blessing${def.blessingCost > 1 ? "s" : ""}<br><small>${def.blessingText}</small></button>
-          `);
-          el("#choice-play").onclick = () => handleEffectResult(playActionCard(currentState, me.id, card.uid, false));
-          el("#choice-blessing").onclick = () => handleEffectResult(playActionCard(currentState, me.id, card.uid, true));
-        } else {
-          handleEffectResult(playActionCard(currentState, me.id, card.uid, false));
-        }
-        return;
-      }
-      if (def.type === "miracle") {
-        handleEffectResult(playMiracleCard(currentState, me.id, card.uid));
-      }
-    }
-
-    onSnapshot(publicRef, { includeMetadataChanges: true }, snap => {
-      if (snap.metadata.hasPendingWrites) return;
-      latestPublic = snap.data();
-      tryRender();
-    }, err => { log(`Public doc error: ${err.code || ""} ${err.message}`); });
-
-    onSnapshot(myHandRef, { includeMetadataChanges: true }, snap => {
-      if (snap.metadata.hasPendingWrites) return;
-      latestMyHand = snap.exists() ? (snap.data().hand || []) : [];
-      tryRender();
-    }, err => { log(`Hand doc error: ${err.code || ""} ${err.message}`); });
-
-    function tryRender() {
-      if (!latestPublic) return;
-      if (latestPublic.status === "waiting") {
-        const joined = latestPublic.seats.filter(Boolean).length;
-        const total = latestPublic.seats.length;
-        el("#online-hint-text").textContent = `Waiting for players… (${joined} of ${total}) — share the code "${roomId}"`;
-        return;
-      }
-      if (latestMyHand === null) return;
-      const state = buildWorkingState();
-      if (!state) return;
-      currentState = state;
-      render(state);
-    }
-
-    function render(state) {
-      actionPending = false;
-      hideActionPanel();
-
-      if (state.status === "finished") {
-        const winner = state.players[state.players.findIndex(p => p.id === state.winnerId)];
-        el("#online-hint-text").textContent = `${winner.name} wins! (Turn ${state.turnCount})`;
-        el("#online-player-hand").innerHTML = "";
-        el("#online-draw-btn").disabled = true;
-        return;
-      }
-
-      const me = state.players[MY_PLAYER_INDEX];
-      const current = state.players[state.currentPlayerIndex];
-      const isMyTurn = current.id === me.id;
-
-      el("#online-turn-count").textContent = state.turnCount;
-      el("#online-room-code-tag").innerHTML = `<svg class="tag-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="13" height="17" rx="2.5" transform="rotate(-8 9.5 15.5)"/><rect x="8" y="3" width="13" height="17" rx="2.5"/></svg> ${current.name}${isMyTurn ? " (you)" : ""}`;
-      el("#online-active-suit-badge").textContent = state.activeSuit || "—";
-      el("#online-active-number-badge").textContent = state.activeNumber ?? "—";
-      el("#online-my-blessings").textContent = me.blessings;
-
-      const others = state.players.filter((p, i) => i !== MY_PLAYER_INDEX);
-      el("#online-opponents-info").textContent = others.map(p => `${p.name}: ${p.hand.length} cards`).join("  ·  ");
-
-      const badgeEl = el("#online-status-badge");
-      if (state.actionLock.active) {
-        const owner = state.players.find(p => p.id === state.actionLock.ownerPlayerId);
-        badgeEl.style.display = "inline-block";
-        badgeEl.textContent = `No Action cards until ${owner.name}'s next turn`;
-      } else if (state.freePlayPlayerId === me.id) {
-        badgeEl.style.display = "inline-block";
-        badgeEl.textContent = "Free play — any card in your hand may be played";
-      } else {
-        badgeEl.style.display = "none";
-      }
-
-      el("#online-hint-text").textContent = isMyTurn ? "Tap a highlighted card to play it." : `Waiting on ${current.name}…`;
-
-      const discardSlot = el("#online-discard-slot");
-      discardSlot.innerHTML = "";
-      const topDiscard = state.discardPile[state.discardPile.length - 1];
-      if (topDiscard) discardSlot.appendChild(renderCard(topDiscard, { size: "large" }));
-
-      const handEl = el("#online-player-hand");
-      handEl.innerHTML = "";
-      me.hand.forEach(card => {
-        const legal = canPlayCard(card, state, me.id);
-        const cardEl = renderCard(card, { size: "medium", legal });
-        cardEl.addEventListener("click", () => {
-          if (actionPending) return;
-          if (!legal) return;
-          lockControls();
-          onCardClick(card);
-        });
-        handEl.appendChild(cardEl);
-      });
-
-      const anyLegal = me.hand.some(c => canPlayCard(c, state, me.id));
-      el("#online-draw-btn").disabled = !isMyTurn || anyLegal;
-    }
-
-    el("#online-draw-btn").addEventListener("click", () => {
-      if (!currentState || actionPending) return;
-      lockControls();
-      const me = currentState.players[MY_PLAYER_INDEX];
-      const drawn = drawCard(currentState, me.id, 1);
-      currentState.freePlayPlayerId = null;
-      const drawnCard = drawn[0];
-      if (drawnCard && canPlayCard(drawnCard, currentState, me.id)) {
-        showActionPanel(`
-          <p>You drew <b>${cardDef(drawnCard).name}</b> — it's playable right now.</p>
-          <button id="play-drawn">Play it</button>
-          <button id="keep-drawn">Keep it in hand</button>
-        `);
-        el("#play-drawn").onclick = () => onCardClick(drawnCard);
-        el("#keep-drawn").onclick = () => finishTurn();
-      } else {
-        finishTurn();
-      }
-    });
-
-    el("#online-quit-btn").addEventListener("click", () => {
-      if (confirm("Leave this online game and return home?")) {
-        showScreen("home-screen");
-      }
-    });
   }
+
+  // ---- The room ---------------------------------------------------
+  // One room at a time. Everything the adapter needs lives here.
+  let ROOM = null;
+
+  function enterRoom(code) {
+    if (ROOM) stopListening();
+    store(ROOM_KEY, code);
+    const refs = refsFor(code);
+    ROOM = {
+      code, refs,
+      latestPublic: null, latestHand: null,
+      myIdx: -1,
+      inMove: false, saving: false,
+      moveBase: null, moveBasePub: null, moveBaseRev: 0,
+      expectRev: 0, myHandRev: 0,
+      unsubs: []
+    };
+    const room = ROOM;
+    room.unsubs.push(onSnapshot(refs.pub, { includeMetadataChanges: true }, snap => {
+      if (room !== ROOM || snap.metadata.hasPendingWrites) return;
+      if (!snap.exists()) { lobbyStatus("That room no longer exists."); store(ROOM_KEY, null); return; }
+      room.latestPublic = snap.data();
+      onRemoteChange();
+    }, err => debug(`public doc error: ${err.code} ${err.message}`)));
+    room.unsubs.push(onSnapshot(refs.hand(myUid), { includeMetadataChanges: true }, snap => {
+      if (room !== ROOM || snap.metadata.hasPendingWrites) return;
+      room.latestHand = snap.exists() ? snap.data() : null;
+      onRemoteChange();
+    }, err => debug(`hand doc error: ${err.code} ${err.message}`)));
+  }
+
+  function stopListening() {
+    if (!ROOM) return;
+    ROOM.unsubs.forEach(u => u());
+    ROOM = null;
+  }
+
+  function leaveRoom(forget) {
+    stopListening();
+    setOnlineAdapter(null);
+    setGame(null);
+    closeModal();
+    if (forget) store(ROOM_KEY, null);
+    showScreen("home-screen");
+    initHomeScreen();
+  }
+
+  function onRemoteChange() {
+    const pub = ROOM.latestPublic;
+    if (!pub) return;
+    if (pub.status === "waiting") { renderWaitingRoom(pub); return; }
+    // Hold remote updates while this device is mid-move or saving;
+    // the board catches up as soon as the move is saved.
+    if (ROOM.inMove || ROOM.saving) return;
+    renderFromLatest();
+  }
+
+  function renderWaitingRoom(pub) {
+    if (!document.querySelector("#online-lobby-screen").classList.contains("active")) showScreen("online-lobby-screen");
+    $("#online-join-panel").style.display = "none";
+    $("#online-waiting").style.display = "block";
+    $("#online-waiting-code").textContent = ROOM.code;
+    const meta = metaFrom(pub);
+    const joined = meta.seats.filter(Boolean).length;
+    $("#online-seat-list").innerHTML = meta.seats.map((uid, i) => {
+      const label = uid ? meta.names[i] : "Waiting…";
+      const tags = [uid === meta.hostUid ? "host" : "", uid === myUid ? "you" : ""].filter(Boolean).join(", ");
+      return `<li class="${uid ? "filled" : "open"}"><span class="seat-num">${i + 1}</span>${escapeHtml(label)}${tags ? ` <em>(${tags})</em>` : ""}</li>`;
+    }).join("");
+    lobbyStatus(`${joined} of ${meta.seats.length} joined — the cards are dealt when every seat is full.`);
+  }
+
+  function readyToRender() {
+    const pub = ROOM.latestPublic, hand = ROOM.latestHand;
+    if (!pub || !hand || pub.status === "waiting") return false;
+    if (hand.gameId && pub.gameId && hand.gameId !== pub.gameId) return false; // new deal still arriving
+    if ((pub.rev || 0) < ROOM.expectRev) return false; // our own save hasn't echoed back yet
+    if ((hand.rev || 0) < ROOM.myHandRev) return false;
+    // The public doc and your hand doc arrive as separate snapshots.
+    // Wait until they agree (e.g. a card just given to you has shown
+    // up in your hand), so a move is never built on a stale hand.
+    const idx = pub.seats.indexOf(myUid);
+    if (idx !== -1 && pub.players && pub.players[idx] && pub.players[idx].handCount !== (hand.hand || []).length) return false;
+    return true;
+  }
+
+  function buildWorkingState() {
+    const pub = ROOM.latestPublic;
+    const state = clone(pub);
+    META_KEYS.forEach(k => delete state[k]);
+    ROOM.myIdx = pub.seats.indexOf(myUid);
+    state.players = pub.players.map((p, i) => ({
+      id: p.id, name: p.name, blessings: p.blessings, connected: true,
+      hand: i === ROOM.myIdx
+        ? clone(ROOM.latestHand.hand || [])
+        : Array.from({ length: p.handCount }, (_, k) => ({ uid: `${PLACEHOLDER}${i}-${k}`, defId: "faith-1" }))
+    }));
+    state.prompt = pub.prompt || null;
+    state.turnOverrideQueue = state.turnOverrideQueue || [];
+    state.gameLog = state.gameLog || [];
+    return state;
+  }
+
+  function renderFromLatest() {
+    if (!ROOM || !readyToRender()) return;
+    const state = buildWorkingState();
+    if (ROOM.myIdx === -1) { leaveRoom(true); alert("You're not seated in that game."); return; }
+    setGame(state);
+    setOnlineAdapter(adapter);
+    const prompt = state.prompt;
+    const promptForMe = state.status === "playing" && prompt && prompt.targetId === state.players[ROOM.myIdx].id;
+    showGameOrResults(); // also closes any open modal
+    if (promptForMe) openStormPrompt(prompt);
+  }
+
+  // ---- Saving a move ------------------------------------------------
+  function beginMove() {
+    ROOM.inMove = true;
+    ROOM.moveBase = clone(getGame());
+    ROOM.moveBaseRev = ROOM.latestPublic.rev || 0;
+    ROOM.moveBasePub = toPublic(ROOM.moveBase, metaFrom(ROOM.latestPublic));
+  }
+
+  function abortMove() {
+    ROOM.inMove = false;
+    closeModal();
+    renderFromLatest();
+  }
+
+  // Re-applies this move on top of a newer public state that picked
+  // up an out-of-turn Miracle while the move was being made.
+  function rebaseMove(mineGame, minePub, latest) {
+    const base = ROOM.moveBasePub;
+    const sameTurn = latest.status === "playing"
+      && latest.gameId === base.gameId
+      && latest.currentPlayerIndex === base.currentPlayerIndex
+      && latest.turnCount === base.turnCount
+      && !!latest.prompt === !!base.prompt;
+    if (!sameTurn) throw new MoveConflict("The game changed before your move was saved.");
+
+    debug("rebasing move onto a newer state");
+    const out = clone(minePub);
+    out.players = minePub.players.map((p, j) => ({
+      ...p,
+      handCount: j === ROOM.myIdx ? p.handCount
+        : latest.players[j].handCount + (p.handCount - base.players[j].handCount),
+      blessings: latest.players[j].blessings + (p.blessings - base.players[j].blessings)
+    }));
+
+    const baseUids = new Set(base.discardPile.map(c => c.uid));
+    const mineUids = new Set(out.discardPile.map(c => c.uid));
+    const extra = latest.discardPile.filter(c => !baseUids.has(c.uid) && !mineUids.has(c.uid));
+    if (extra.length) {
+      const baseTop = base.discardPile[base.discardPile.length - 1];
+      const mineTop = out.discardPile[out.discardPile.length - 1];
+      if (!mineTop || (baseTop && mineTop.uid === baseTop.uid)) out.discardPile.push(...extra);
+      else out.discardPile.splice(out.discardPile.length - 1, 0, ...extra);
+    }
+
+    const myLines = mineGame.gameLog.slice(ROOM.moveBase.gameLog.length);
+    out.gameLog = (latest.gameLog || []).concat(myLines).slice(-LOG_LIMIT);
+    return out;
+  }
+
+  async function commitMove() {
+    const room = ROOM;
+    const mine = getGame();
+    room.inMove = false;
+    room.saving = true;
+    closeModal();
+    showGameOrResults(); // show the result right away, marked "Saving…"
+
+    const myHand = clone(mine.players[room.myIdx].hand);
+    const gifts = [];
+    mine.players.forEach((p, j) => {
+      if (j === room.myIdx) return;
+      p.hand.forEach(c => { if (!c.uid.startsWith(PLACEHOLDER)) gifts.push({ uid: room.latestPublic.seats[j], card: c }); });
+    });
+
+    let newRev = 0;
+    try {
+      await runTransaction(db, async tx => {
+        const snap = await tx.get(room.refs.pub);
+        const handSnap = await tx.get(room.refs.hand(myUid));
+        const latest = snap.data();
+        const savedHand = ((handSnap.data() || {}).hand || []).map(c => c.uid).sort().join();
+        const baseHand = room.moveBase.players[room.myIdx].hand.map(c => c.uid).sort().join();
+        if (savedHand !== baseHand) throw new MoveConflict("Your hand changed before your move was saved.");
+        let pub = toPublic(mine, metaFrom(latest));
+        if ((latest.rev || 0) !== room.moveBaseRev) pub = rebaseMove(mine, pub, latest);
+        newRev = (latest.rev || 0) + 1;
+        pub.rev = newRev;
+        tx.set(room.refs.pub, pub);
+        tx.set(room.refs.hand(myUid), { hand: myHand, gameId: mine.gameId, rev: newRev });
+        gifts.forEach(g => tx.update(room.refs.hand(g.uid), { hand: arrayUnion(g.card) }));
+      });
+      room.expectRev = newRev;
+      room.myHandRev = newRev;
+    } catch (err) {
+      debug(`save failed: ${err.message}`);
+      alert(err instanceof MoveConflict
+        ? "Someone else's move landed first, so yours wasn't saved — the board has been refreshed."
+        : `Couldn't save that move (${err.message}). The board has been refreshed.`);
+    }
+    if (room !== ROOM) return;
+    room.saving = false;
+    renderFromLatest();
+  }
+
+  // ---- Out-of-turn Miracles (Favor, Strength) -----------------------
+  // Applied directly to the latest state inside the transaction, so
+  // it never depends on what this device last saw.
+  async function playReaction(card) {
+    const room = ROOM;
+    room.saving = true;
+    renderGameScreen();
+    let newRev = 0;
+    try {
+      await runTransaction(db, async tx => {
+        const snap = await tx.get(room.refs.pub);
+        const handSnap = await tx.get(room.refs.hand(myUid));
+        const latest = snap.data();
+        const hand = (handSnap.data() || {}).hand || [];
+        if (latest.status !== "playing" || latest.prompt) throw new MoveConflict("That can't be played right now.");
+        if (latest.seats[latest.currentPlayerIndex] === myUid) throw new MoveConflict("It's your turn now — play it as normal.");
+        if (!hand.some(c => c.uid === card.uid)) throw new Error("That card isn't in your hand anymore.");
+        const def = cardDef(card);
+        if (def.type !== "miracle" || def.timing !== "any_time") throw new Error("Only Favor and Strength can be played out of turn.");
+
+        const newHand = hand.filter(c => c.uid !== card.uid);
+        const pub = clone(latest);
+        const me = pub.players[room.myIdx];
+        pub.gameLog = pub.gameLog || [];
+        pub.discardPile.push(card);
+        me.handCount = newHand.length;
+        pub.gameLog.push(`${me.name} played ${def.name} (Miracle) out of turn.`);
+        if (def.effect.type === "gain_blessing") {
+          me.blessings += def.effect.amount;
+          pub.gameLog.push(`${me.name} gained ${def.effect.amount} Blessing from ${def.name}.`);
+        }
+        if (newHand.length === 0) {
+          pub.status = "finished";
+          pub.winnerId = me.id;
+          pub.gameLog.push(`${me.name} wins!`);
+        }
+        pub.gameLog = pub.gameLog.slice(-LOG_LIMIT);
+        newRev = (latest.rev || 0) + 1;
+        pub.rev = newRev;
+        tx.set(room.refs.pub, pub);
+        tx.set(room.refs.hand(myUid), { hand: newHand, gameId: latest.gameId, rev: newRev });
+      });
+      room.expectRev = newRev;
+      room.myHandRev = newRev;
+    } catch (err) {
+      // Lost a race (e.g. it just became your turn) — the refreshed
+      // board explains itself, so only surface real problems.
+      if (!(err instanceof MoveConflict)) alert(err.message);
+    }
+    if (room !== ROOM) return;
+    room.saving = false;
+    renderFromLatest();
+  }
+
+  // ---- The Big Storm: the target's discard ---------------------------
+  function openStormPrompt(prompt) {
+    const game = getGame();
+    const me = game.players[ROOM.myIdx];
+    const by = findPlayer(game, prompt.byId);
+    openModal(`<h3>The Big Storm</h3>
+      <p>${escapeHtml(by ? by.name : "Someone")} chose you — you may discard 1 card.</p>
+      <div class="reveal-row" id="storm-slot"></div>
+      <button class="btn" id="storm-skip">Keep my cards</button>`);
+    const slot = $("#storm-slot");
+    me.hand.forEach(card => {
+      const c = renderCard(card, { size: "small" });
+      c.classList.add("selectable");
+      c.addEventListener("click", () => resolveStormPrompt(card));
+      slot.appendChild(c);
+    });
+    $("#storm-skip").addEventListener("click", () => resolveStormPrompt(null));
+  }
+
+  async function resolveStormPrompt(card) {
+    const room = ROOM;
+    closeModal();
+    room.saving = true;
+    renderGameScreen();
+    let newRev = 0;
+    try {
+      await runTransaction(db, async tx => {
+        const snap = await tx.get(room.refs.pub);
+        const handSnap = await tx.get(room.refs.hand(myUid));
+        const latest = snap.data();
+        const hand = (handSnap.data() || {}).hand || [];
+        const me = latest.players[room.myIdx];
+        if (!latest.prompt || latest.prompt.targetId !== me.id) throw new Error("That prompt has already been answered.");
+        const pub = clone(latest);
+        const pme = pub.players[room.myIdx];
+        pub.gameLog = pub.gameLog || [];
+        let newHand = hand;
+        if (card && hand.some(c => c.uid === card.uid)) {
+          newHand = hand.filter(c => c.uid !== card.uid);
+          // Slipped under the top card: it's a discard, not a play,
+          // so the active suit/number stay as they were.
+          pub.discardPile.splice(Math.max(0, pub.discardPile.length - 1), 0, card);
+          pub.gameLog.push(`${pme.name} discarded a card (The Big Storm).`);
+        } else {
+          pub.gameLog.push(`${pme.name} kept their cards (The Big Storm).`);
+        }
+        pme.handCount = newHand.length;
+        pub.prompt = null;
+        if (newHand.length === 0) {
+          pub.status = "finished";
+          pub.winnerId = pme.id;
+          pub.gameLog.push(`${pme.name} wins!`);
+        }
+        pub.gameLog = pub.gameLog.slice(-LOG_LIMIT);
+        newRev = (latest.rev || 0) + 1;
+        pub.rev = newRev;
+        tx.set(room.refs.pub, pub);
+        tx.set(room.refs.hand(myUid), { hand: newHand, gameId: latest.gameId, rev: newRev });
+      });
+      room.expectRev = newRev;
+      room.myHandRev = newRev;
+    } catch (err) {
+      alert(err.message);
+    }
+    if (room !== ROOM) return;
+    room.saving = false;
+    renderFromLatest();
+  }
+
+  // ---- Play Again -----------------------------------------------------
+  async function rematch() {
+    const room = ROOM;
+    room.saving = true;
+    try {
+      await runTransaction(db, async tx => {
+        const snap = await tx.get(room.refs.pub);
+        const latest = snap.data();
+        if (latest.status !== "finished") return; // someone else already started it
+        const meta = metaFrom(latest);
+        dealInto(tx, room.refs, meta, meta.names);
+      });
+    } catch (err) {
+      alert(`Couldn't start a new game: ${err.message}`);
+    }
+    if (room !== ROOM) return;
+    room.saving = false;
+    renderFromLatest();
+  }
+
+  // Handy when testing: window.__passItOnOnline() in the console.
+  window.__passItOnOnline = () => ROOM && {
+    code: ROOM.code, myIdx: ROOM.myIdx, inMove: ROOM.inMove, saving: ROOM.saving,
+    rev: ROOM.latestPublic && ROOM.latestPublic.rev, handRev: ROOM.latestHand && ROOM.latestHand.rev,
+    expectRev: ROOM.expectRev, myHandRev: ROOM.myHandRev, ready: readyToRender()
+  };
+
+  // ---- Adapter used by ui.js -------------------------------------------
+  const adapter = {
+    get roomId() { return ROOM ? ROOM.code : ""; },
+    myIndex: () => ROOM.myIdx,
+    canAct: () => {
+      if (!ROOM || ROOM.saving || ROOM.inMove) return false;
+      const g = getGame();
+      return !!g && g.status === "playing" && !g.prompt;
+    },
+    beginMove,
+    abortMove,
+    settle: () => {
+      if (!ROOM) return;
+      if (ROOM.inMove) commitMove();
+      else renderFromLatest();
+    },
+    react: card => playReaction(card),
+    rematch: () => rematch(),
+    leave: forget => leaveRoom(forget)
+  };
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
 }

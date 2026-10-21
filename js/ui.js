@@ -8,6 +8,25 @@
 let GAME = null; // current game state
 const SAVE_KEY = "passiton-save-v1";
 
+// ---- Online adapter --------------------------------------------
+// Local pass-and-play and online play share this exact same game
+// screen and every effect modal below. When an online game is
+// running, online.js installs an adapter here; the handful of
+// places that differ (whose hand is shown, how a finished turn is
+// saved, The Big Storm's target discard) check ONLINE and defer to
+// it. With ONLINE === null everything behaves as local pass-and-play.
+let ONLINE = null;
+function setOnlineAdapter(adapter) { ONLINE = adapter; }
+function getGame() { return GAME; }
+function setGame(state) { GAME = state; }
+
+// The player whose hand is shown on this device: the current player
+// in pass-and-play, or "me" in an online game.
+function viewerPlayer() {
+  if (ONLINE) return GAME.players[ONLINE.myIndex()];
+  return currentPlayer(GAME);
+}
+
 const el = sel => document.querySelector(sel);
 const els = sel => Array.from(document.querySelectorAll(sel));
 
@@ -62,6 +81,7 @@ el("#resume-game-btn").addEventListener("click", () => {
 
 // ---- Persistence (PWA requirement, Section 18) -------------------
 function persist() {
+  if (ONLINE) return; // online games are saved to Firestore, not this device
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify(GAME));
   } catch (e) {
@@ -86,6 +106,10 @@ function clearSave() {
 function initHomeScreen() {
   const saved = loadSave();
   el("#resume-game-btn").style.display = saved && saved.status === "playing" ? "block" : "none";
+  let room = null;
+  try { room = localStorage.getItem("passiton-online-room"); } catch (e) {}
+  el("#rejoin-online-btn").style.display = room ? "block" : "none";
+  if (room) el("#rejoin-online-btn").textContent = `Rejoin Online Game · ${room}`;
 }
 
 el("#new-game-btn").addEventListener("click", () => {
@@ -94,12 +118,14 @@ el("#new-game-btn").addEventListener("click", () => {
 });
 
 el("#home-btn-results").addEventListener("click", () => {
+  if (ONLINE) { ONLINE.leave(true); return; }
   clearSave();
   showScreen("home-screen");
   initHomeScreen();
 });
 
 el("#play-again-btn").addEventListener("click", () => {
+  if (ONLINE) { ONLINE.rematch(); return; }
   showScreen("setup-screen");
   initSetupScreen();
 });
@@ -111,6 +137,18 @@ el("#play-again-btn").addEventListener("click", () => {
 // it for whoever the new current player is — except when the game
 // has ended, when it still routes to the results screen.
 function renderPassScreen() {
+  // Online: every effect flow ends by calling this (directly or via
+  // finishTurn), so it's the one place a finished move gets saved.
+  if (ONLINE) { ONLINE.settle(); return; }
+  showGameOrResults();
+}
+
+function showGameOrResults() {
+  // Any effect modal is finished by the time the board re-renders.
+  // Several flows (a card played from a reveal/discard modal that
+  // ends the turn) used to leave the modal up with the same card
+  // still tappable, which could play it a second time.
+  closeModal();
   if (GAME.status === "finished") {
     renderResultsScreen();
     showScreen("results-screen");
@@ -127,8 +165,15 @@ function renderGameScreen() {
   // ever firing its "mouseleave" — that's what left the hover
   // tooltip stuck on screen. Always clear it before rebuilding.
   hideCardTooltip();
-  const p = currentPlayer(GAME);
-  el("#current-player-name").textContent = p.name;
+  const current = currentPlayer(GAME);
+  const p = viewerPlayer();
+  const isMyTurn = p.id === current.id;
+  // Online, nobody can act while a move is saving or while someone
+  // is answering a prompt (e.g. The Big Storm's discard).
+  const blocked = ONLINE ? !ONLINE.canAct() : false;
+  el("#current-player-name").textContent = ONLINE && isMyTurn ? `${current.name} (you)` : current.name;
+  el("#room-code-tag").style.display = ONLINE ? "inline-flex" : "none";
+  if (ONLINE) el("#room-code-tag").textContent = ONLINE.roomId;
   el("#turn-count").textContent = GAME.turnCount;
   el("#draw-pile-count").textContent = GAME.drawPile.length;
 
@@ -141,7 +186,7 @@ function renderGameScreen() {
     el("#action-lock-badge").innerHTML = `<svg class="badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><line x1="5.5" y1="18.5" x2="18.5" y2="5.5"/></svg> Peace: no Action cards until ${owner.name}'s next turn`;
   }
 
-  const freePlay = GAME.freePlayPlayerId === p.id;
+  const freePlay = GAME.freePlayPlayerId === p.id && isMyTurn;
   el("#free-play-badge").style.display = freePlay ? "inline-block" : "none";
   if (freePlay) {
     el("#free-play-badge").innerHTML = `<svg class="badge-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.2 7.8L22 12l-7.8 2.2L12 22l-2.2-7.8L2 12l7.8-2.2z"/></svg> Free play — any card in your hand may be played`;
@@ -160,7 +205,12 @@ function renderGameScreen() {
   // layout — you don't sit "behind" your own cards).
   const seats = el("#opponent-seats");
   seats.innerHTML = "";
-  const opponentList = GAME.players.filter(op => op.id !== p.id);
+  // Seated in turn order, starting with whoever plays after you.
+  const myIdx = GAME.players.findIndex(pl => pl.id === p.id);
+  const opponentList = [];
+  for (let k = 1; k < GAME.players.length; k++) {
+    opponentList.push(GAME.players[(myIdx + k) % GAME.players.length]);
+  }
   const seatCount = opponentList.length;
   const halfWidthByCount = { 1: 0, 2: 55, 3: 85, 4: 112, 5: 140 };
   const halfWidth = halfWidthByCount[seatCount] ?? 140;
@@ -197,7 +247,7 @@ function renderGameScreen() {
   const maxSpreadDeg = 22; // total fan doesn't get wider than this regardless of hand size
   const perCardDeg = mid > 0 ? Math.min(7, maxSpreadDeg / mid) : 0;
   p.hand.forEach((card, i) => {
-    const legal = canPlayCard(card, GAME, p.id);
+    const legal = !blocked && canPlayCard(card, GAME, p.id);
     const cardEl = renderCard(card, { size: "medium", legal });
     const offset = i - mid;
     cardEl.style.setProperty("--rot", `${offset * perCardDeg}deg`);
@@ -207,10 +257,24 @@ function renderGameScreen() {
   });
 
   const anyLegal = hasAnyLegalCard(GAME, p.id);
-  el("#draw-btn").style.display = anyLegal ? "none" : "flex";
-  el("#hint-text").textContent = anyLegal
-    ? "Tap a highlighted card to play it."
-    : "No legal plays — draw a card.";
+  const canDraw = isMyTurn && !anyLegal && !blocked;
+  el("#draw-btn").style.display = canDraw ? "flex" : "none";
+  let hint;
+  if (GAME.prompt) {
+    const target = findPlayer(GAME, GAME.prompt.targetId);
+    hint = target.id === p.id
+      ? "The Big Storm — you may discard 1 card."
+      : `Waiting for ${target.name} to decide on a discard (The Big Storm)…`;
+  } else if (blocked) {
+    hint = "Saving…";
+  } else if (!isMyTurn) {
+    hint = `Waiting on ${current.name}…`;
+    if (anyLegal) hint += " You can play a highlighted Miracle any time.";
+  } else {
+    hint = anyLegal ? "Tap a highlighted card to play it." : "No legal plays — draw a card.";
+  }
+  el("#hint-text").textContent = hint;
+  el("#hand-label").textContent = ONLINE ? "Your hand" : `${p.name}'s hand`;
 }
 
 // Builds an <img> for card art. Unlike a CSS background-image, an
@@ -430,10 +494,21 @@ function closeCardZoom() {
 
 el("#zoom-overlay").addEventListener("click", closeCardZoom);
 
-function onCardClick(card) {
+// `continuingMove` is set when the play is part of a move already in
+// progress (playing the card you just drew).
+function onCardClick(card, continuingMove = false) {
   const def = cardDef(card);
-  const p = currentPlayer(GAME);
+  const p = viewerPlayer();
   if (!canPlayCard(card, GAME, p.id)) return;
+
+  if (ONLINE && !continuingMove) {
+    if (!ONLINE.canAct()) return;
+    // An "any time" Miracle played on someone else's turn is saved
+    // straight against the latest shared state, so it can't clobber
+    // (or be clobbered by) the current player's move.
+    if (p.id !== currentPlayer(GAME).id) { ONLINE.react(card); return; }
+    ONLINE.beginMove();
+  }
 
   if (def.type === "number") {
     const result = playNumberCard(GAME, p.id, card.uid);
@@ -487,6 +562,10 @@ function showActionChoiceModal(def, card) {
 
 el("#draw-btn").addEventListener("click", () => {
   const p = currentPlayer(GAME);
+  if (ONLINE) {
+    if (!ONLINE.canAct() || viewerPlayer().id !== p.id || hasAnyLegalCard(GAME, p.id)) return;
+    ONLINE.beginMove();
+  }
   const drawn = drawCard(GAME, p.id, 1);
   GAME.freePlayPlayerId = null; // drawing expires an unused free play
   pendingAfterCard = null;
@@ -503,7 +582,7 @@ el("#draw-btn").addEventListener("click", () => {
     el("#drawn-card-slot").appendChild(renderCard(drawn[0], { size: "medium" }));
     el("#play-drawn").addEventListener("click", () => {
       closeModal();
-      onCardClick(drawn[0]);
+      onCardClick(drawn[0], true);
     });
     el("#keep-drawn").addEventListener("click", () => {
       closeModal();
@@ -606,7 +685,12 @@ function playExtraCard(playerId, card, onResult) {
 function handleEffectResult(result, playerId) {
   if (!result) { renderPassScreen(); return; }
   if (result.won) { persist(); renderPassScreen(); return; }
-  if (result.error) { alert(result.error); renderGameScreen(); return; }
+  if (result.error) {
+    alert(result.error);
+    if (ONLINE) { ONLINE.abortMove(); return; }
+    renderGameScreen();
+    return;
+  }
   if (!result.needsInput) {
     if (result.miracle) finishMiracleTurn();
     else finishTurn();
@@ -907,6 +991,15 @@ function modalBigStorm(result, playerId) {
 
 function promptDiscardOne(playerId, onDone) {
   const player = findPlayer(GAME, playerId);
+  if (ONLINE && playerId !== viewerPlayer().id) {
+    // Online, the target makes this choice on their own device: the
+    // turn moves on with a prompt waiting, and play pauses until
+    // they answer it (see ONLINE.renderPrompt / resolveStormPrompt).
+    GAME.prompt = { type: "storm_discard", targetId: playerId, byId: viewerPlayer().id };
+    log(GAME, `${player.name} may discard 1 card (The Big Storm).`);
+    onDone();
+    return;
+  }
   if (player.hand.length === 0) { onDone(); return; }
   openModal(`<h3>${player.name}, discard a card</h3><div class="reveal-row" id="hand-slot"></div>
     <button class="btn" id="skip-discard">Skip</button>`);
@@ -1246,6 +1339,10 @@ el("#toggle-log-btn").addEventListener("click", () => {
 });
 
 el("#quit-to-home-btn").addEventListener("click", () => {
+  if (ONLINE) {
+    if (confirm(`Leave this game? You can rejoin room ${ONLINE.roomId} from the home screen.`)) ONLINE.leave(false);
+    return;
+  }
   if (confirm("Quit to home? Your game will remain saved and you can resume it.")) {
     showScreen("home-screen");
     initHomeScreen();
