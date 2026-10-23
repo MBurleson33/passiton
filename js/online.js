@@ -19,12 +19,15 @@
 //
 // Why transactions: the public doc carries a `rev` counter. A move
 // is computed locally from rev N and saved only if the doc is still
-// at rev N. The one thing that can legitimately land in between is
-// someone playing Favor/Strength out of turn — in that case the
-// move is "rebased" onto the newer state (their card, Blessing, and
-// hand count are kept alongside yours) instead of overwriting it.
-// Anything else unexpected cancels the move and refreshes the board
-// rather than losing or duplicating cards.
+// at rev N, together with your hand and any card you gave someone.
+// The only thing that can legitimately land in between is Strength
+// ("at any time"), which interrupts the turn — so the unfinished
+// move is canceled, as the rules say (an interrupted normal draw
+// still completes). Cards can never be lost or duplicated.
+//
+// Choices another player makes on their own phone (The Big Storm's
+// discard, Gratitude) are queued in `prompts`; play pauses until
+// they're answered.
 // ============================================================
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.17.0/firebase-app.js";
@@ -74,12 +77,14 @@ function metaFrom(data) {
 function toPublic(state, meta) {
   const { players, ...rest } = clone(state);
   rest.gameLog = (rest.gameLog || []).slice(-LOG_LIMIT);
-  rest.prompt = rest.prompt || null;
+  rest.prompts = rest.prompts || [];
+  delete rest.prompt;
   rest.turnOverrideQueue = rest.turnOverrideQueue || [];
   return {
     ...rest,
     players: players.map(p => ({
-      id: p.id, name: p.name, blessings: p.blessings, connected: true, handCount: p.hand.length
+      id: p.id, name: p.name, blessings: p.blessings, connected: true,
+      gifts: p.gifts || [], handCount: p.hand.length
     })),
     ...meta
   };
@@ -252,7 +257,7 @@ if (!window.firebaseConfig || window.firebaseConfig.apiKey.startsWith("PASTE-"))
       latestPublic: null, latestHand: null,
       myIdx: -1,
       inMove: false, saving: false,
-      moveBase: null, moveBasePub: null, moveBaseRev: 0,
+      moveBase: null, moveBaseRev: 0, moveKind: null, drawnUids: [],
       expectRev: 0, myHandRev: 0,
       unsubs: []
     };
@@ -332,13 +337,19 @@ if (!window.firebaseConfig || window.firebaseConfig.apiKey.startsWith("PASTE-"))
     ROOM.myIdx = pub.seats.indexOf(myUid);
     state.players = pub.players.map((p, i) => ({
       id: p.id, name: p.name, blessings: p.blessings, connected: true,
+      gifts: clone(p.gifts || []),
       hand: i === ROOM.myIdx
         ? clone(ROOM.latestHand.hand || [])
         : Array.from({ length: p.handCount }, (_, k) => ({ uid: `${PLACEHOLDER}${i}-${k}`, defId: "faith-1" }))
     }));
-    state.prompt = pub.prompt || null;
+    state.prompts = pub.prompts || [];
     state.turnOverrideQueue = state.turnOverrideQueue || [];
     state.gameLog = state.gameLog || [];
+    state.turn = state.turn || { purchases: 0, extraPurchaseDiscount: null, used: {} };
+    state.turn.used = state.turn.used || {};
+    state.graceMarket = (state.graceMarket || []).map(c => c || null);
+    state.graceDeck = state.graceDeck || [];
+    state.graceDiscard = state.graceDiscard || [];
     return state;
   }
 
@@ -348,59 +359,25 @@ if (!window.firebaseConfig || window.firebaseConfig.apiKey.startsWith("PASTE-"))
     if (ROOM.myIdx === -1) { leaveRoom(true); alert("You're not seated in that game."); return; }
     setGame(state);
     setOnlineAdapter(adapter);
-    const prompt = state.prompt;
-    const promptForMe = state.status === "playing" && prompt && prompt.targetId === state.players[ROOM.myIdx].id;
     showGameOrResults(); // also closes any open modal
-    if (promptForMe) openStormPrompt(prompt);
+    const prompt = state.prompts[0];
+    if (state.status === "playing" && prompt && prompt.targetId === state.players[ROOM.myIdx].id) openPrompt(prompt);
   }
 
   // ---- Saving a move ------------------------------------------------
-  function beginMove() {
+  // kind: "play" | "draw" | "buy" | "end" | "suit" | "renewal"
+  function beginMove(kind) {
     ROOM.inMove = true;
+    ROOM.moveKind = kind || "play";
+    ROOM.drawnUids = [];
     ROOM.moveBase = clone(getGame());
     ROOM.moveBaseRev = ROOM.latestPublic.rev || 0;
-    ROOM.moveBasePub = toPublic(ROOM.moveBase, metaFrom(ROOM.latestPublic));
   }
 
   function abortMove() {
     ROOM.inMove = false;
     closeModal();
     renderFromLatest();
-  }
-
-  // Re-applies this move on top of a newer public state that picked
-  // up an out-of-turn Miracle while the move was being made.
-  function rebaseMove(mineGame, minePub, latest) {
-    const base = ROOM.moveBasePub;
-    const sameTurn = latest.status === "playing"
-      && latest.gameId === base.gameId
-      && latest.currentPlayerIndex === base.currentPlayerIndex
-      && latest.turnCount === base.turnCount
-      && !!latest.prompt === !!base.prompt;
-    if (!sameTurn) throw new MoveConflict("The game changed before your move was saved.");
-
-    debug("rebasing move onto a newer state");
-    const out = clone(minePub);
-    out.players = minePub.players.map((p, j) => ({
-      ...p,
-      handCount: j === ROOM.myIdx ? p.handCount
-        : latest.players[j].handCount + (p.handCount - base.players[j].handCount),
-      blessings: latest.players[j].blessings + (p.blessings - base.players[j].blessings)
-    }));
-
-    const baseUids = new Set(base.discardPile.map(c => c.uid));
-    const mineUids = new Set(out.discardPile.map(c => c.uid));
-    const extra = latest.discardPile.filter(c => !baseUids.has(c.uid) && !mineUids.has(c.uid));
-    if (extra.length) {
-      const baseTop = base.discardPile[base.discardPile.length - 1];
-      const mineTop = out.discardPile[out.discardPile.length - 1];
-      if (!mineTop || (baseTop && mineTop.uid === baseTop.uid)) out.discardPile.push(...extra);
-      else out.discardPile.splice(out.discardPile.length - 1, 0, ...extra);
-    }
-
-    const myLines = mineGame.gameLog.slice(ROOM.moveBase.gameLog.length);
-    out.gameLog = (latest.gameLog || []).concat(myLines).slice(-LOG_LIMIT);
-    return out;
   }
 
   async function commitMove() {
@@ -419,16 +396,22 @@ if (!window.firebaseConfig || window.firebaseConfig.apiKey.startsWith("PASTE-"))
     });
 
     let newRev = 0;
+    let interrupted = false;
     try {
       await runTransaction(db, async tx => {
         const snap = await tx.get(room.refs.pub);
         const handSnap = await tx.get(room.refs.hand(myUid));
         const latest = snap.data();
+        if ((latest.rev || 0) !== room.moveBaseRev) {
+          // Something landed first. In practice that's Strength,
+          // which interrupts the turn and cancels the unfinished action.
+          interrupted = latest.turnCount !== room.moveBase.turnCount;
+          throw new MoveConflict("stale");
+        }
         const savedHand = ((handSnap.data() || {}).hand || []).map(c => c.uid).sort().join();
         const baseHand = room.moveBase.players[room.myIdx].hand.map(c => c.uid).sort().join();
-        if (savedHand !== baseHand) throw new MoveConflict("Your hand changed before your move was saved.");
-        let pub = toPublic(mine, metaFrom(latest));
-        if ((latest.rev || 0) !== room.moveBaseRev) pub = rebaseMove(mine, pub, latest);
+        if (savedHand !== baseHand) throw new MoveConflict("stale");
+        const pub = toPublic(mine, metaFrom(latest));
         newRev = (latest.rev || 0) + 1;
         pub.rev = newRev;
         tx.set(room.refs.pub, pub);
@@ -439,18 +422,54 @@ if (!window.firebaseConfig || window.firebaseConfig.apiKey.startsWith("PASTE-"))
       room.myHandRev = newRev;
     } catch (err) {
       debug(`save failed: ${err.message}`);
-      alert(err instanceof MoveConflict
-        ? "Someone else's move landed first, so yours wasn't saved — the board has been refreshed."
-        : `Couldn't save that move (${err.message}). The board has been refreshed.`);
+      if (err instanceof MoveConflict && interrupted) {
+        // Rule: a normal draw that gets interrupted still finishes.
+        if (room.moveKind === "draw" && room.drawnUids.length) await finishInterruptedDraw(room);
+        alert("Strength was played — your unfinished action was canceled.");
+      } else {
+        alert(err instanceof MoveConflict
+          ? "Another move landed first, so yours wasn't saved — the board has been refreshed."
+          : `Couldn't save that move (${err.message}). The board has been refreshed.`);
+      }
     }
     if (room !== ROOM) return;
     room.saving = false;
     renderFromLatest();
   }
 
-  // ---- Out-of-turn Miracles (Favor, Strength) -----------------------
-  // Applied directly to the latest state inside the transaction, so
-  // it never depends on what this device last saw.
+  async function finishInterruptedDraw(room) {
+    try {
+      let newRev = 0;
+      await runTransaction(db, async tx => {
+        const snap = await tx.get(room.refs.pub);
+        const handSnap = await tx.get(room.refs.hand(myUid));
+        const latest = snap.data();
+        const hand = (handSnap.data() || {}).hand || [];
+        const pub = clone(latest);
+        const taken = [];
+        room.drawnUids.forEach(uid => {
+          const i = pub.drawPile.findIndex(c => c.uid === uid);
+          if (i !== -1) taken.push(pub.drawPile.splice(i, 1)[0]);
+        });
+        if (!taken.length) return;
+        const newHand = hand.concat(taken);
+        pub.players[room.myIdx].handCount = newHand.length;
+        pub.gameLog = (pub.gameLog || []).concat(`${pub.players[room.myIdx].name} finished drawing.`).slice(-LOG_LIMIT);
+        newRev = (latest.rev || 0) + 1;
+        pub.rev = newRev;
+        tx.set(room.refs.pub, pub);
+        tx.set(room.refs.hand(myUid), { hand: newHand, gameId: latest.gameId, rev: newRev });
+      });
+      if (newRev) { room.expectRev = newRev; room.myHandRev = newRev; }
+    } catch (err) {
+      debug(`finish draw failed: ${err.message}`);
+    }
+  }
+
+  // ---- Strength: played at any time ---------------------------------
+  // Applied straight onto the latest shared state. It interrupts the
+  // current turn: play continues with the player after you, who
+  // chooses the active suit.
   async function playReaction(card) {
     const room = ROOM;
     room.saving = true;
@@ -462,28 +481,29 @@ if (!window.firebaseConfig || window.firebaseConfig.apiKey.startsWith("PASTE-"))
         const handSnap = await tx.get(room.refs.hand(myUid));
         const latest = snap.data();
         const hand = (handSnap.data() || {}).hand || [];
-        if (latest.status !== "playing" || latest.prompt) throw new MoveConflict("That can't be played right now.");
+        if (latest.status !== "playing" || (latest.prompts || []).length) throw new MoveConflict("That can't be played right now.");
         if (latest.seats[latest.currentPlayerIndex] === myUid) throw new MoveConflict("It's your turn now — play it as normal.");
         if (!hand.some(c => c.uid === card.uid)) throw new Error("That card isn't in your hand anymore.");
         const def = cardDef(card);
-        if (def.type !== "miracle" || def.timing !== "any_time") throw new Error("Only Favor and Strength can be played out of turn.");
+        if (def.type !== "miracle" || def.timing !== "any_time") throw new Error("Only Strength can be played out of turn.");
+        if (latest.actionLock && latest.actionLock.active) throw new Error("Peace is in effect — no Miracles until it ends.");
 
         const newHand = hand.filter(c => c.uid !== card.uid);
         const pub = clone(latest);
-        const me = pub.players[room.myIdx];
         pub.gameLog = pub.gameLog || [];
+        pub.turnOverrideQueue = pub.turnOverrideQueue || [];
+        const me = pub.players[room.myIdx];
         pub.discardPile.push(card);
         me.handCount = newHand.length;
-        pub.gameLog.push(`${me.name} played ${def.name} (Miracle) out of turn.`);
-        if (def.effect.type === "gain_blessing") {
-          me.blessings += def.effect.amount;
-          pub.gameLog.push(`${me.name} gained ${def.effect.amount} Blessing from ${def.name}.`);
-        }
+        log(pub, `${me.name} played ${def.name} (Miracle) at any time, interrupting ${pub.players[pub.currentPlayerIndex].name}'s turn.`);
         if (newHand.length === 0) {
           pub.status = "finished";
           pub.winnerId = me.id;
-          pub.gameLog.push(`${me.name} wins!`);
+          log(pub, `${me.name} wins!`);
+        } else {
+          redirectAfterStrength(pub, me.id);
         }
+        pub.prompts = [];
         pub.gameLog = pub.gameLog.slice(-LOG_LIMIT);
         newRev = (latest.rev || 0) + 1;
         pub.rev = newRev;
@@ -493,8 +513,6 @@ if (!window.firebaseConfig || window.firebaseConfig.apiKey.startsWith("PASTE-"))
       room.expectRev = newRev;
       room.myHandRev = newRev;
     } catch (err) {
-      // Lost a race (e.g. it just became your turn) — the refreshed
-      // board explains itself, so only surface real problems.
       if (!(err instanceof MoveConflict)) alert(err.message);
     }
     if (room !== ROOM) return;
@@ -502,26 +520,43 @@ if (!window.firebaseConfig || window.firebaseConfig.apiKey.startsWith("PASTE-"))
     renderFromLatest();
   }
 
-  // ---- The Big Storm: the target's discard ---------------------------
-  function openStormPrompt(prompt) {
+  // ---- Choices made on your own phone during someone else's turn ----
+  //   storm_discard — The Big Storm: you may discard 1 card
+  //   gratitude     — you have Gratitude: swap the card you were
+  //                   Passed for the top of the draw pile?
+  function openPrompt(prompt) {
     const game = getGame();
     const me = game.players[ROOM.myIdx];
     const by = findPlayer(game, prompt.byId);
+    const byName = escapeHtml(by ? by.name : "Someone");
+    if (prompt.type === "gratitude") {
+      const card = me.hand.find(c => c.uid === prompt.cardUid);
+      openModal(`<h3>Gratitude</h3>
+        <p>${byName} Passed It On to you. Swap that card for the top card of the draw pile?</p>
+        <div class="reveal-row" id="prompt-slot"></div>
+        <div class="choice-row">
+          <button class="btn btn-gold" id="prompt-yes">Swap it</button>
+          <button class="btn" id="prompt-no">Keep it</button>
+        </div>`);
+      if (card) $("#prompt-slot").appendChild(renderCard(card, { size: "medium" }));
+      $("#prompt-yes").addEventListener("click", () => resolvePrompt(prompt, true));
+      $("#prompt-no").addEventListener("click", () => resolvePrompt(prompt, false));
+      return;
+    }
     openModal(`<h3>The Big Storm</h3>
-      <p>${escapeHtml(by ? by.name : "Someone")} chose you — you may discard 1 card.</p>
-      <div class="reveal-row" id="storm-slot"></div>
-      <button class="btn" id="storm-skip">Keep my cards</button>`);
-    const slot = $("#storm-slot");
+      <p>${byName} chose you — you may discard 1 card.</p>
+      <div class="reveal-row" id="prompt-slot"></div>
+      <button class="btn" id="prompt-no">Keep my cards</button>`);
     me.hand.forEach(card => {
       const c = renderCard(card, { size: "small" });
       c.classList.add("selectable");
-      c.addEventListener("click", () => resolveStormPrompt(card));
-      slot.appendChild(c);
+      c.addEventListener("click", () => resolvePrompt(prompt, card));
+      $("#prompt-slot").appendChild(c);
     });
-    $("#storm-skip").addEventListener("click", () => resolveStormPrompt(null));
+    $("#prompt-no").addEventListener("click", () => resolvePrompt(prompt, null));
   }
 
-  async function resolveStormPrompt(card) {
+  async function resolvePrompt(prompt, answer) {
     const room = ROOM;
     closeModal();
     room.saving = true;
@@ -532,29 +567,33 @@ if (!window.firebaseConfig || window.firebaseConfig.apiKey.startsWith("PASTE-"))
         const snap = await tx.get(room.refs.pub);
         const handSnap = await tx.get(room.refs.hand(myUid));
         const latest = snap.data();
-        const hand = (handSnap.data() || {}).hand || [];
-        const me = latest.players[room.myIdx];
-        if (!latest.prompt || latest.prompt.targetId !== me.id) throw new Error("That prompt has already been answered.");
-        const pub = clone(latest);
-        const pme = pub.players[room.myIdx];
-        pub.gameLog = pub.gameLog || [];
-        let newHand = hand;
-        if (card && hand.some(c => c.uid === card.uid)) {
-          newHand = hand.filter(c => c.uid !== card.uid);
-          // Slipped under the top card: it's a discard, not a play,
-          // so the active suit/number stay as they were.
-          pub.discardPile.splice(Math.max(0, pub.discardPile.length - 1), 0, card);
-          pub.gameLog.push(`${pme.name} discarded a card (The Big Storm).`);
-        } else {
-          pub.gameLog.push(`${pme.name} kept their cards (The Big Storm).`);
+        const handDoc = handSnap.data() || {};
+        const first = (latest.prompts || [])[0];
+        const myId = latest.players[room.myIdx].id;
+        if (!first || first.targetId !== myId || first.type !== prompt.type) throw new Error("That choice has already been made.");
+        // Run the rule on a working copy with just my real hand.
+        const st = clone(latest);
+        st.players = latest.players.map((p, i) => ({ ...clone(p), hand: i === room.myIdx ? clone(handDoc.hand || []) : [] }));
+        st.gameLog = st.gameLog || [];
+        st.turn = st.turn || { purchases: 0, extraPurchaseDiscount: null, used: {} };
+        st.turn.used = st.turn.used || {};
+        const me = st.players[room.myIdx];
+        if (prompt.type === "storm_discard") {
+          if (answer && me.hand.some(c => c.uid === answer.uid)) {
+            removeFromHand(me, answer.uid);
+            discardUnderTop(st, [answer]);
+            log(st, `${me.name} discarded a card (The Big Storm).`);
+          } else {
+            log(st, `${me.name} kept their cards (The Big Storm).`);
+          }
+        } else if (prompt.type === "gratitude") {
+          if (answer) applyGratitude(st, me.id, prompt.cardUid);
+          else log(st, `${me.name} kept the card they were Passed.`);
         }
-        pme.handCount = newHand.length;
-        pub.prompt = null;
-        if (newHand.length === 0) {
-          pub.status = "finished";
-          pub.winnerId = pme.id;
-          pub.gameLog.push(`${pme.name} wins!`);
-        }
+        st.prompts = st.prompts.slice(1);
+        checkWin(st, me.id);
+        const newHand = me.hand;
+        const pub = { ...st, players: st.players.map(({ hand, ...p }, i) => ({ ...p, handCount: i === room.myIdx ? hand.length : latest.players[i].handCount })) };
         pub.gameLog = pub.gameLog.slice(-LOG_LIMIT);
         newRev = (latest.rev || 0) + 1;
         pub.rev = newRev;
@@ -605,9 +644,10 @@ if (!window.firebaseConfig || window.firebaseConfig.apiKey.startsWith("PASTE-"))
     canAct: () => {
       if (!ROOM || ROOM.saving || ROOM.inMove) return false;
       const g = getGame();
-      return !!g && g.status === "playing" && !g.prompt;
+      return !!g && g.status === "playing" && !(g.prompts || []).length;
     },
     beginMove,
+    noteDrawn: cards => { if (ROOM) ROOM.drawnUids = (cards || []).map(c => c.uid); },
     abortMove,
     settle: () => {
       if (!ROOM) return;

@@ -297,6 +297,7 @@ h1, h2, h3 {
 }
 
 .opponent-badge {
+  z-index: 2;
   position: absolute;
   transform: translate(-50%, -50%);
   display: flex; align-items: center; gap: 8px;
@@ -677,3 +678,70 @@ h1, h2, h3 {
   color: var(--accent-2-hi);
   font-weight: 700;
 }
+
+/* ---- Rules v1.1: symbol badge, Grace Market, Gifts, placeholders ---- */
+.badge-symbol { background: var(--surface-2); color: var(--text); border-color: var(--border-strong); }
+.turn-actions { display: flex; justify-content: center; min-height: 0; }
+#end-turn-btn { margin: 2px auto 6px; }
+.grace-btn {
+  display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-body); font-weight: 700; font-size: 0.78rem;
+  padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text);
+  cursor: pointer;
+}
+.grace-btn.can-buy { border-color: #d8b24a; color: #ffd978; box-shadow: 0 0 0 3px rgba(216,178,74,0.18); }
+.my-gifts { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; padding: 0 14px 8px; }
+.gift-chip {
+  display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-body); font-size: 0.74rem; font-weight: 700;
+  padding: 4px 10px; border-radius: 999px; border: 1px solid rgba(216,178,74,0.55); background: rgba(216,178,74,0.12); color: #ffd978; cursor: pointer;
+}
+.opp-gifts { display: inline-flex; align-items: center; color: #ffd978; }
+
+.market-status { color: var(--ink-dim); font-size: 0.88rem; }
+.market-row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin: 12px 0 6px; }
+.market-col { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.market-col .btn { margin: 0; padding: 7px 12px; font-size: 0.82rem; }
+.modal-box .btn.btn-gold.market-buy { background: linear-gradient(135deg, #ffd27a, #f0a63a); color: #201404; border-color: #e6a84a; }
+.modal-box .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.market-empty {
+  width: 88px; height: 123px; border-radius: var(--radius-sm); border: 2px dashed rgba(20,24,42,0.2);
+  display: flex; align-items: center; justify-content: center; color: var(--ink-dim); font-size: 0.8rem;
+}
+.market-meta { color: var(--ink-dim); font-size: 0.76rem; margin-bottom: 8px; }
+.gifts-heading { font-family: var(--font-head); color: var(--ink); margin: 12px 0 2px; font-size: 1rem; }
+.gift-holder { margin: 6px 0; }
+.gift-holder-name { font-weight: 700; color: var(--ink); font-size: 0.85rem; }
+.small-note { color: var(--ink-dim); font-size: 0.8rem; }
+
+/* Placeholder card faces — used until the artwork file is uploaded */
+.card-placeholder {
+  position: absolute; inset: 0; border-radius: 8px; overflow: hidden;
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  padding: 7% 7% 6%; color: var(--ink);
+  background:
+    radial-gradient(120% 80% at 50% 0%, color-mix(in srgb, var(--accent-card) 18%, transparent), transparent 70%),
+    #fbf6ea;
+  box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--accent-card) 75%, white), inset 0 0 0 5px #fbf6ea, inset 0 0 0 6px color-mix(in srgb, var(--accent-card) 40%, white);
+  container-type: inline-size;
+}
+.card-placeholder.grace-gift { background: radial-gradient(120% 80% at 50% 0%, rgba(216,178,74,0.35), transparent 70%), #fbf3dc; }
+.card-placeholder.grace-act { background: radial-gradient(120% 80% at 50% 0%, rgba(63,138,79,0.28), transparent 70%), #eef6ea; }
+.ph-kind {
+  font-size: max(6px, 7.5cqw); font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--accent-card); margin-top: 4%;
+}
+.ph-name { font-family: var(--font-head); font-weight: 800; font-size: max(8px, 12.5cqw); line-height: 1.1; margin-top: 6%; }
+.ph-number { font-family: var(--font-head); font-weight: 800; font-size: 46cqw; color: var(--accent-card); margin: auto 0; }
+.ph-text {
+  font-size: max(5px, 7.4cqw); line-height: 1.3; color: var(--ink-dim); margin-top: auto; margin-bottom: auto; padding-bottom: 8%;
+  display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden;
+}
+.card-small .ph-text { display: none; }
+.ph-cost {
+  position: absolute; bottom: 5%; left: 50%; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 1px;
+  font-weight: 800; font-size: max(7px, 9cqw); color: #8a6512;
+  background: rgba(255,255,255,0.8); border-radius: 999px; padding: 1px 6px;
+}
+.card.grace-card-gift { border-color: #d8b24a; }
+.card.grace-card-act { border-color: #4f9a5f; }
+.zoom-card-fallback { position: relative; padding: 0; overflow: hidden; }
+.zoom-card-fallback .card-placeholder { border-radius: var(--radius-lg); }

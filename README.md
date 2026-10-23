@@ -14,29 +14,33 @@ folder straight into a GitHub Pages repo and it works
    server, e.g. `python3 -m http.server 8080`, then open
    `http://localhost:8080`.
 
-## What's implemented (Phases 1–3 of the brief)
+## What's implemented (Rules v1.1 / Card Reference v1.2)
 
-- 2–6 player local pass-and-play, staying on one continuous game
-  screen (no interstitial between turns) — opponent hands are still
-  hidden as counts only.
-- 2–6 player online play, one phone per player (see below).
-- Full 112-card deck using a rarity system — see below — with all 36
-  unique Number cards, 12 unique Action cards, and 6 unique Miracle
-  cards, all using your real artwork.
-- Suit/number matching, draw pile, discard pile with reshuffle-when-
-  empty, Blessing tokens (each player starts with 1), win detection
-  and a results screen.
-- All 12 Action cards from your printed art, each with its normal
-  **and** Blessing ability, exactly as written on the cards.
-- All 6 Miracle cards, including Peace's Action-card lock and the
-  Miracle free-play chain (see below).
-- Hold-to-zoom on any card for a full-size view with its rules text;
-  desktop mouse-hover shows the same info for Action/Miracle cards
-  without needing to click.
-- Save/resume via `localStorage`, offline support via a service
-  worker. App code is fetched network-first (so updates show up on
-  the next launch with no cache-busting), with card art and fonts
-  served from cache.
+- 2–6 player local pass-and-play on one continuous game screen, and
+  2–6 player online play with one phone per player (see below).
+- **Main Deck (150):** 108 Number cards (36 × 3), 30 Action cards,
+  12 Miracle cards. **Grace Deck (18):** 9 Gifts + 9 Acts of Grace.
+- Matching by **suit, number, or symbol** — an Action card can be
+  played on any Action card of the same story, whatever its suit.
+- **Pass It On:** after playing a numbered card you may give another
+  player a card with the same number and gain 1 Blessing (optional,
+  once per turn). Winning by passing your last card counts.
+- **Miracles:** after one resolves, the player who takes the next turn
+  chooses the active suit (Wisdom's player chooses instead). Only
+  **Strength** ("at any time") can be played on someone else's turn —
+  it interrupts, and play continues after the Strength player.
+  **Peace** now stops Action *and* Miracle cards.
+- **Grace Market:** 3 face-up cards; buy 1 per turn on your own turn,
+  before or after your play (after you play, the turn pauses with an
+  **End Turn** button whenever you can still afford something). Gifts
+  stay in front of you (max 2 — buying a third asks which to discard);
+  Acts resolve immediately and go to the Grace discard pile, which is
+  reshuffled when the Grace Deck runs out. Every Gift and Act is
+  implemented except Generosity (see below).
+- Hold-to-zoom on any card for its full text; desktop hover tooltips.
+- Save/resume via `localStorage` (save format bumped — games saved
+  before this update can't be resumed), offline support via a
+  service worker.
 
 ## Online play (Firebase)
 
@@ -48,86 +52,25 @@ Tap **Play Online** on the home screen. Each phone is its own seat:
    sends the code + link. Cards are dealt the moment every seat fills.
 2. The game uses the same table, card art, hold-to-zoom, game log and
    effect pop-ups as pass-and-play — you only ever see your own hand.
-3. **Favor** and **Strength** light up on other people's turns and can
-   be played any time.
-4. **The Big Storm** works across devices: the chosen player gets the
-   "discard 1 card / keep my cards" choice on their own phone, and play
-   pauses until they answer.
+3. **Strength** lights up on other people's turns and can be played
+   at any time — it interrupts their turn.
+4. Choices that belong to another player happen on their own phone,
+   and play pauses until they answer: **The Big Storm**'s discard, and
+   **Gratitude** when someone Passes It On to them.
 5. Closed the app or lost signal? Home screen → **Rejoin Online Game**.
 6. When someone wins, anyone can tap **Play Again** to deal a new game
    to the same group in the same room.
 
 How it stays in sync (`js/online.js`): every move is saved in a
 Firestore transaction against a `rev` counter, together with your hand
-(and any card you gave someone). If a Favor/Strength lands while you're
-mid-move, your move is merged on top of it rather than overwriting it;
-anything else unexpected cancels the move and refreshes the board, so
-cards can't be lost or duplicated. Hands stay private via Security
+(and any card you gave someone). If Strength interrupts you mid-move,
+your unfinished move is canceled and the board refreshes, so cards
+can't be lost or duplicated. Hands stay private via Security
 Rules (`games/{code}/hands/{uid}` readable only by that player).
 
 The old `sync-test.html`, `sync-game-test.html`, `hidden-hands-test.html`
 and `auth-test.html` pages are still in the repo but are no longer
 needed — the main app has everything they tested.
-
-## Deck rarity system
-
-Per your July 2026 rules update, the deck is no longer one uniform
-copy count per card type — each card declares its own `copies` in
-`js/cards.js`:
-
-- **Number cards (72):** all 36 unique cards × 2, unchanged.
-- **Action cards (25):** Mustard Seed, Walk On Water, and Good
-  Samaritan are common at 3 copies each; Five Stones, Tree Climber,
-  Big Fish, Two Coins, Living Water, Loaves & Fish, and Good Shepherd
-  are 2 copies; Empty Tomb and Big Storm are rare at 1 copy.
-- **Miracle cards (15):** Redeemed, Peace, and Favor are common at 3
-  copies; Wisdom, Overflow, and Strength are 2 copies.
-- **Total: 112 cards.**
-
-`createFullDeck()` just sums whatever `copies` each card declares —
-nothing else in the app hardcodes a deck size or count. If you
-rebalance rarity again later, only `js/cards.js` needs to change;
-`TOTAL_DECK_SIZE` and everything downstream (the draw-pile counter,
-reshuffle logic, etc.) derives from it automatically.
-
-## Card text/mechanic changes from this update
-
-A few cards' printed text changed along with the new art, so the
-mechanics now match exactly:
-
-- **The Big Storm** Play ability now targets *another* player only
-  (no longer yourself); Blessing cost 1 → 2, and it no longer sets
-  the active suit — both players may simply discard.
-- **The Empty Tomb** Blessing cost: 2 → 3.
-- **The Good Samaritan** Play ability is now just "give a card" (no
-  extra play). Its Blessing ability now lets only the giver play an
-  extra card if able — previously both players could.
-- **Walk On Water** Blessing ability changed from "gain 1 Blessing"
-  to "pick who plays next" — after playing their free card, the
-  player chooses any player (including themselves) to go next. This
-  reuses the turn-override queue that used to be Strength-specific
-  (`turnOverrideQueue` in `js/engine.js`).
-- **Strength**'s text is now "Play continues with the player after
-  you," which resolves the earlier ambiguity in Strength's wording —
-  it does *not* grant the Strength player another turn. Since only
-  the current player can ever act on their own hand in this app,
-  "the player after you" is exactly the player who'd go next anyway,
-  so Strength now just resolves like any other Miracle (see
-  `renewed_strength` in `js/engine.js`).
-
-## Miracle free-play rule
-
-Miracle cards don't establish an active suit or number. Once a
-Miracle resolves, the *next* player gets a free play — they may play
-any card from their hand regardless of the active suit or number. If
-they play a Number or Action card, that establishes the new active
-suit/number as normal. If they play another Miracle, the free play
-chains to the player after them. Drawing instead of playing expires
-the free play immediately — the drawn card is then judged under
-normal matching rules. Effect-based restrictions still apply during a
-free play (e.g. Peace's Action-card lock still blocks Action cards
-even for the free-play player). This lives in `endTurnWithFreePlay()`
-and `canPlayCard()` in `js/engine.js`.
 
 ## Design refresh
 
@@ -152,39 +95,51 @@ All of this is CSS-only (`css/style.css`) plus two `<link>` tags in
 `index.html` — no JS or markup structure changed, so nothing else
 should need re-testing on your end beyond a visual check.
 
-## Decisions made to get a testable prototype (flag these if you want them different)
+## Card art and placeholders
 
-- **"Grace"** — the original brief's placeholder card — is now the
-  **Redeemed** card in your final art, with the mechanic "return 1
-  card from the discard pile to your hand." Implemented as such.
-- **Wisdom** still lets the player choose a suit as printed, but
-  since the very next player gets an unrestricted free play right
-  after, that choice mostly only matters if the free-play player
-  chooses to draw instead of playing (see the free-play rule above).
-- **Number card art** points at your real files (`cards/Faith - 1.jpg`
-  through `cards/Word - 6.jpg`, etc.). If a specific file is ever
-  missing or misnamed, the card falls back to a suit-colored text
-  card automatically rather than showing blank.
-- A few Action-card effects needed a small ruling to be playable at
-  all (not spelled out on the cards): if none of Five Stones' or
-  Loaves & Fish's revealed cards are legal, the prototype lets you
-  keep one card in hand (this is the "needs confirmation" item from
-  section 11 of the brief — easy to flip to "return all five" in
-  `resolveActionEffect`/`modalFiveStonesPlay` if you'd rather). Any
-  modal that asks you to choose a card now also has a fallback (an
-  auto-skip or a "Continue" button) for the edge case where nothing
-  legal is actually available to choose, so you can't get stuck on
-  screen.
-- "Announcing last card" and a maximum Blessing cap are not
-  implemented (per the brief, still open decisions) — no penalty or
-  cap exists yet.
+Cards without uploaded art get a designed placeholder face (name,
+type, cost and text) and pick up the real art automatically once a
+file with the expected name is in `cards/`:
+
+- **Grace cards:** `cards/Grace - <Name>.jpg` — e.g.
+  `Grace - Discernment.jpg`, `Grace - Open Door.jpg`,
+  `Grace - Second Chance.jpg`, `Grace - Favor.jpg` (the Act).
+- **Second-suit Action cards:** the suit you already have art for keeps
+  its file; the other suit uses `cards/Action - <Name> (<Suit>).jpg` —
+  `Tree Climber (Word)`, `Loaves and Fish (Love)`,
+  `Mustard Seed (Word)`, `The Good Samaritan (Love)`,
+  `Two Coins (Service)`, `Walk on Water (Prayer)`.
+
+## Decisions made where the rules are open (flag any you want different)
+
+- **Action card split.** The rules give 30 Action cards but not the
+  copies per card. Assumed 2 per suit for the six two-suit stories
+  (4 each) and 1 each for the six single-suit stories. One place to
+  change it: `copiesPerSuit` in `js/cards.js`.
+- **Generosity** is left out of the Grace Deck (so it has 17 cards)
+  until its printed ability is confirmed — set its text/effect and
+  `enabled` in `js/cards.js`.
+- **Encouragement** triggers on cards given by an effect (Good
+  Samaritan, Two Coins, Give Freely), not on Pass It On.
+- **Unity's** extra card can be any card of that suit (Number or
+  Action), and resolves normally.
+- **Strength online:** a move isn't saved until it's finished, so an
+  interrupted player's whole unfinished move is canceled (cards go
+  back to their hand). An interrupted normal draw still completes.
+- Playing a Miracle through an Act (e.g. Guidance) ends your turn like
+  any Miracle.
+- **Five Stones (Blessing)** with nothing playable still lets you keep
+  1 card or return all 5. Five Stones' leftover cards are returned in
+  the order you choose, as printed.
+- **New Perspective** and Wisdom clear the active number when the suit
+  is chosen.
 
 ## Project structure
 
 ```
 index.html
 css/style.css
-js/cards.js      — all card data (edit here to change card text/effects)
+js/cards.js      — all card data incl. the Grace Deck (edit here to change text, costs, copies)
 js/engine.js      — game rules, no DOM access
 js/ui.js          — rendering + all the effect-resolution modals
 js/app.js         — service worker registration
@@ -197,7 +152,8 @@ icons/            — generated placeholder app icons (swap for your logo any ti
 
 - Swap the placeholder icons in `icons/` for your circular Pass It On
   logo.
-- Add real Number card art (see above).
+- Upload the Grace card art and the second-suit Action art (names above).
+- Confirm Generosity's ability.
 - Sound, animations, and a card library/rulebook screen.
 - Online: no handling yet for a player who leaves for good mid-game
   (the table waits for them). Rejoining works from the same phone and

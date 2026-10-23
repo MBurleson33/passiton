@@ -5,7 +5,7 @@
 // Code files are network-first (see fetch handler), so updates
 // arrive automatically; bump CACHE_NAME only when card art changes.
 // ============================================================
-const CACHE_NAME = "pass-it-on-v22";
+const CACHE_NAME = "pass-it-on-v23";
 
 const ASSETS = [
   "./",
