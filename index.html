@@ -89,9 +89,15 @@
     </div>
   </div>
 
-  <p class="hint-text" id="hint-text"></p>
-  <div class="turn-actions">
-    <button class="btn btn-gold" id="end-turn-btn" style="display:none">End Turn</button>
+  <!-- What to do right now — one place, always up to date -->
+  <div class="turn-panel" id="turn-panel">
+    <div class="turn-title" id="turn-title"></div>
+    <p class="hint-text" id="hint-text"></p>
+    <div class="turn-actions">
+      <button class="btn btn-gold" id="main-draw-btn" style="display:none">Draw a Card</button>
+      <button class="btn btn-gold" id="market-cta-btn" style="display:none">Grace Market</button>
+      <button class="btn" id="end-turn-btn" style="display:none">End Turn</button>
+    </div>
   </div>
 
   <footer class="hand-footer">
@@ -123,13 +129,14 @@
 </section>
 
 <!-- DESKTOP HOVER TOOLTIP (Action/Miracle card effects) -->
-<!-- ROTATE PROMPT (phones held sideways — see css) -->
+<!-- ROTATE PROMPT (phones/tablets held upright — see css) -->
 <div class="rotate-overlay" aria-live="polite">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>
-  <p>Please turn your phone upright</p>
-  <small>Pass It On is played in portrait.</small>
+  <p>Please turn your phone sideways</p>
+  <small>Pass It On is played in landscape.</small>
 </div>
 
+<div id="toast" class="toast" role="status"></div>
 <div id="card-tooltip" class="card-tooltip"></div>
 
 <!-- CARD ZOOM OVERLAY (hold-to-view) -->

@@ -256,6 +256,8 @@ function renderGameScreen() {
     handEl.appendChild(cardEl);
   });
 
+  fitHand(handEl);
+
   // Your Gifts of Grace
   const giftRow = el("#my-gifts");
   giftRow.innerHTML = "";
@@ -274,28 +276,104 @@ function renderGameScreen() {
   el("#draw-btn").style.display = canDraw ? "flex" : "none";
   const canEnd = isMyTurn && GAME.turnPhase === "after" && !blocked;
   el("#end-turn-btn").style.display = canEnd ? "inline-flex" : "none";
+  el("#end-turn-btn").classList.toggle("btn-gold", canEnd && !canBuyAnyGrace(GAME, p.id));
   const marketBtn = el("#grace-market-btn");
   marketBtn.classList.toggle("can-buy", isMyTurn && !blocked && canBuyAnyGrace(GAME, p.id));
 
-  let hint;
+  // ---- The turn panel: who's up, what to do, one obvious button ----
+  const canBuy = isMyTurn && !blocked && canBuyAnyGrace(GAME, p.id);
+  let title, hint, mine = false;
   if (prompts.length) {
     const target = findPlayer(GAME, prompts[0].targetId);
-    hint = target.id === p.id ? "Make your choice…" : `Waiting for ${target.name} to decide…`;
+    title = target.id === p.id ? "Your choice" : `${target.name} is choosing`;
+    hint = target.id === p.id ? "Make your choice in the window." : "Play continues once they decide.";
   } else if (blocked) {
+    title = isMyTurn ? "Your turn" : `${current.name}'s turn`;
     hint = "Saving…";
   } else if (GAME.suitChooserId) {
-    hint = GAME.suitChooserId === p.id ? "Choose the active suit." : `Waiting for ${chooser.name} to choose the suit…`;
+    mine = GAME.suitChooserId === p.id;
+    title = mine ? "Your turn" : `${chooser.name}'s turn`;
+    hint = mine ? "A Miracle was played — choose the suit." : `${chooser.name} is choosing the suit.`;
   } else if (!isMyTurn) {
-    hint = `Waiting on ${current.name}…`;
-    if (anyLegal) hint += " You can play Strength at any time.";
+    title = `${current.name}'s turn`;
+    hint = anyLegal ? "You can play Strength right now if you want." : "Wait for your turn.";
   } else if (GAME.turnPhase === "after") {
+    mine = true;
+    title = "Your play is done";
     hint = "Buy from the Grace Market, or end your turn.";
   } else {
-    hint = anyLegal ? "Tap a highlighted card to play it." : "No legal plays — draw a card.";
+    mine = true;
+    title = ONLINE ? "Your turn" : `${p.name}'s turn`;
+    hint = anyLegal ? `Play ${matchDescription(GAME)}. Playable cards are lifted.` : `Nothing matches ${matchDescription(GAME)}. Draw a card.`;
   }
+  el("#turn-title").textContent = title;
   el("#hint-text").textContent = hint;
+  el("#turn-panel").classList.toggle("is-mine", mine);
+  el("#main-draw-btn").style.display = canDraw ? "inline-flex" : "none";
+  const marketCta = canBuy && GAME.turnPhase === "after";
+  el("#market-cta-btn").style.display = marketCta ? "inline-flex" : "none";
+  el("#grace-market-btn").style.visibility = marketCta ? "hidden" : "visible";
+  el("#game-screen").classList.toggle("not-my-turn", !isMyTurn && !anyLegal);
   el("#hand-label").textContent = ONLINE ? "Your hand" : `${p.name}'s hand`;
 }
+
+// "a Word card, any 4, or another Tree Climber" — what can be played now.
+function matchDescription(state) {
+  const parts = [];
+  if (state.activeSuit) parts.push(`a ${state.activeSuit} card`);
+  if (state.activeNumber != null) parts.push(`any ${state.activeNumber}`);
+  if (state.activeSymbol) {
+    const sym = ACTION_CARDS.find(a => a.story === state.activeSymbol);
+    if (sym) parts.push(`another ${sym.name}`);
+  }
+  if (!parts.length) return "any card";
+  if (parts.length === 1) return parts[0];
+  return parts.slice(0, -1).join(", ") + " or " + parts[parts.length - 1];
+}
+
+let toastTimer = null;
+function showToast(msg) {
+  const t = el("#toast");
+  t.textContent = msg;
+  t.classList.add("visible");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("visible"), 2600);
+}
+
+// Why a tapped card can't be played — said plainly instead of nothing happening.
+function whyNotPlayable(card, playerId) {
+  const def = cardDef(card);
+  const current = currentPlayer(GAME);
+  if (!viewerCanAct()) return null;
+  if (GAME.suitChooserId === playerId) return "Choose the suit first.";
+  if (GAME.actionLock.active && (def.type === "action" || def.type === "miracle")) return "Peace is in effect — no Action or Miracle cards until it ends.";
+  if (current.id !== playerId) return `It's ${current.name}'s turn — wait for yours.`;
+  if (GAME.turnPhase !== "play") return "You've already played this turn. Buy from the Grace Market or tap End Turn.";
+  return `That card doesn't match. Play ${matchDescription(GAME)}.`;
+}
+
+// Overlap the fanned hand just enough to fit its space, so a big
+// hand doesn't run off the edge (it still scrolls if it must).
+function fitHand(handEl) {
+  const cards = Array.from(handEl.children);
+  if (cards.length < 2) return;
+  cards.forEach(c => { c.style.marginLeft = ""; });
+  const w = cards[0].offsetWidth;
+  const baseOverlap = parseFloat(getComputedStyle(cards[1]).marginLeft) || 0;
+  const avail = handEl.clientWidth - 28;
+  const total = w + (cards.length - 1) * (w + baseOverlap);
+  if (total <= avail) return;
+  const overlap = Math.max(-(w - 22), (avail - w) / (cards.length - 1) - w);
+  cards.slice(1).forEach(c => { c.style.marginLeft = `${overlap}px`; });
+}
+
+let resizeTimer = null;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    if (GAME && el("#game-screen").classList.contains("active")) renderGameScreen();
+  }, 150);
+});
 
 // ---- Card rendering ---------------------------------------------------
 // Art that failed to load once is remembered, so placeholders for
@@ -511,7 +589,10 @@ el("#zoom-overlay").addEventListener("click", closeCardZoom);
 function onCardClick(card, continuingMove = false) {
   const def = cardDef(card);
   const p = viewerPlayer();
-  if (!canPlayCard(card, GAME, p.id)) return;
+  if (!canPlayCard(card, GAME, p.id)) {
+    if (!continuingMove) { const why = whyNotPlayable(card, p.id); if (why) showToast(why); }
+    return;
+  }
 
   if (ONLINE && !continuingMove) {
     if (!ONLINE.canAct()) return;
@@ -559,13 +640,16 @@ function showActionChoiceModal(def, card) {
 }
 
 // ---- Drawing --------------------------------------------------------
-el("#draw-btn").addEventListener("click", () => {
+function tryDraw() {
   const p = currentPlayer(GAME);
   if (viewerPlayer().id !== p.id || !viewerCanAct() || hasAnyLegalCard(GAME, p.id)) return;
   if (GAME.turnPhase !== "play" || GAME.suitChooserId) return;
   startMoveOnline("draw");
   startDraw(p.id);
-});
+}
+el("#draw-btn").addEventListener("click", tryDraw);
+el("#main-draw-btn").addEventListener("click", tryDraw);
+el("#market-cta-btn").addEventListener("click", () => openGraceMarket());
 
 // Discernment (look at the top 2 first), then Endurance (draw 2,
 // keep 1) or a normal draw.

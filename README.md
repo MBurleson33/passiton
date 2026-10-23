@@ -37,6 +37,13 @@ folder straight into a GitHub Pages repo and it works
   Acts resolve immediately and go to the Grace discard pile, which is
   reshuffled when the Grace Deck runs out. Every Gift and Act is
   implemented except Generosity (see below).
+- **Landscape only:** phones and tablets held upright see a "turn your
+  phone sideways" screen. Sideways, the table is on the left and your
+  hand on the right.
+- **Turn panel:** one box above your hand always says whose turn it is
+  and what to do ("Play a Faith card or any 4"), with a single obvious
+  button when one is needed (Draw a Card, Grace Market, End Turn).
+  Tapping a card you can't play says why.
 - Hold-to-zoom on any card for its full text; desktop hover tooltips.
 - Save/resume via `localStorage` (save format bumped — games saved
   before this update can't be resumed), offline support via a
