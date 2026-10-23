@@ -182,7 +182,8 @@ function renderGameScreen() {
   el("#draw-pile-count").textContent = GAME.drawPile.length;
 
   el("#active-suit-badge").textContent = GAME.activeSuit || "Choosing…";
-  el("#active-suit-badge").style.background = GAME.activeSuit ? SUIT_COLORS[GAME.activeSuit] : "#555";
+  el("#active-suit-badge").style.color = GAME.activeSuit ? SUIT_COLORS[GAME.activeSuit] : "";
+  el("#active-suit-badge").style.borderColor = GAME.activeSuit ? SUIT_COLORS[GAME.activeSuit] : "";
   const numBadge = el("#active-number-badge");
   numBadge.style.display = GAME.activeNumber != null ? "inline-block" : "none";
   numBadge.textContent = GAME.activeNumber != null ? GAME.activeNumber : "";
@@ -360,7 +361,8 @@ function fitHand(handEl) {
   cards.forEach(c => { c.style.marginLeft = ""; });
   const w = cards[0].offsetWidth;
   const baseOverlap = parseFloat(getComputedStyle(cards[1]).marginLeft) || 0;
-  const avail = handEl.clientWidth - 28;
+  // leave room for the outer cards' tilt and the padding
+  const avail = handEl.clientWidth - 28 - w * 0.45;
   const total = w + (cards.length - 1) * (w + baseOverlap);
   if (total <= avail) return;
   const overlap = Math.max(-(w - 22), (avail - w) / (cards.length - 1) - w);

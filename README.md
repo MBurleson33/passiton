@@ -79,28 +79,15 @@ The old `sync-test.html`, `sync-game-test.html`, `hidden-hands-test.html`
 and `auth-test.html` pages are still in the repo but are no longer
 needed — the main app has everything they tested.
 
-## Design refresh
+## Look and feel ("warm tabletop")
 
-The visual style got a full pass while keeping the same vintage
-navy/cream/gold direction from your printed cards:
-
-- Playfair Display (headings) + Lora (body) via Google Fonts, loaded
-  in `index.html` — falls back to Georgia if fonts.googleapis.com is
-  unreachable.
-- Richer layered shadows and a subtle gradient background instead of
-  flat color, on every screen.
-- Home/Setup/Results screens now sit in a bordered, elevated panel
-  instead of loose centered text.
-- Legal cards in your hand now have a soft animated glow (in addition
-  to the lift + border), and non-legal cards are more clearly dimmed.
-- Refined buttons, badges, opponent tiles, and modals — softer
-  gradients, consistent radii, hover states on desktop.
-- The draw/discard pile area now sits in a subtle "table" recess for
-  visual grounding.
-
-All of this is CSS-only (`css/style.css`) plus two `<link>` tags in
-`index.html` — no JS or markup structure changed, so nothing else
-should need re-testing on your end beyond a visual check.
+Everything is styled from the printed cards: royal-blue felt like the
+card back, a gold rim with sunburst rays behind the discard pile,
+cream parchment panels framed like a card, and navy ink. Headings use
+Bree Serif (close to the card titles), body text Figtree, both from
+Google Fonts. Gold buttons always mean "do this now"; parchment
+buttons are everything else. All styling lives in `css/style.css`;
+the colors are the variables at the top of that file.
 
 ## Card art and placeholders
 
