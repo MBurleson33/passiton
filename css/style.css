@@ -745,3 +745,23 @@ h1, h2, h3 {
 .card.grace-card-act { border-color: #4f9a5f; }
 .zoom-card-fallback { position: relative; padding: 0; overflow: hidden; }
 .zoom-card-fallback .card-placeholder { border-radius: var(--radius-lg); }
+
+/* ---- Phones held sideways: ask to rotate ----
+   Only short landscape screens (phones); tablets and computers can
+   still play sideways. The game keeps running underneath. */
+.rotate-overlay { display: none; }
+@media (orientation: landscape) and (max-height: 500px) {
+  .rotate-overlay {
+    display: flex; position: fixed; inset: 0; z-index: 1000;
+    flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+    background: var(--bg-deep); color: var(--text); text-align: center; padding: 20px;
+  }
+  .rotate-overlay svg { width: 56px; height: 56px; color: var(--accent-hi); animation: rotate-hint 2.4s ease-in-out infinite; }
+  .rotate-overlay p { font-family: var(--font-head); font-weight: 800; font-size: 1.2rem; margin: 10px 0 0; }
+  .rotate-overlay small { color: var(--text-dim); }
+}
+@keyframes rotate-hint {
+  0%, 20% { transform: rotate(-90deg); }
+  50%, 100% { transform: rotate(0deg); }
+}
+@media (prefers-reduced-motion: reduce) { .rotate-overlay svg { animation: none; } }
