@@ -5,7 +5,7 @@
 // Code files are network-first (see fetch handler), so updates
 // arrive automatically; bump CACHE_NAME only when card art changes.
 // ============================================================
-const CACHE_NAME = "pass-it-on-v23";
+const CACHE_NAME = "pass-it-on-v24";
 
 const ASSETS = [
   "./",
@@ -20,6 +20,7 @@ const ASSETS = [
   "js/firebase-config.js",
   "icons/icon-192.png",
   "icons/icon-512.png",
+  "icons/apple-touch-icon.png",
   "cards/Pass It On - Back.jpg",
   "cards/Action - Five Stones.jpg",
   "cards/Action - Living Water.jpg",
