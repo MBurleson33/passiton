@@ -666,7 +666,9 @@ h1, h2, h3 { font-family: var(--font-head); font-weight: 400; letter-spacing: 0;
   .zoom-hint { grid-column: 2; }
 
   /* Home: the card beside the title and buttons */
-  .home-wrap { max-width: 660px; display: grid; grid-template-columns: auto 1fr; column-gap: 40px; align-items: center; justify-items: start; text-align: left; }
+  /* Card + title/buttons as one group, centered on the screen */
+  .home-wrap { max-width: none; width: auto; display: grid; grid-template-columns: auto 300px; column-gap: 44px; align-items: center; justify-items: stretch; justify-content: center; text-align: left; }
+  .home-wrap .btn-lg { max-width: none; }
   .home-wrap > * { grid-column: 2; }
   .home-wrap > .home-badge-img { grid-column: 1; grid-row: 1 / span 6; margin: 0; }
 
