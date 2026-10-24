@@ -362,7 +362,7 @@ function fitHand(handEl) {
   const w = cards[0].offsetWidth;
   const baseOverlap = parseFloat(getComputedStyle(cards[1]).marginLeft) || 0;
   // leave room for the outer cards' tilt and the padding
-  const avail = handEl.clientWidth - 28 - w * 0.45;
+  const avail = handEl.clientWidth - 28 - w * 0.7;
   const total = w + (cards.length - 1) * (w + baseOverlap);
   if (total <= avail) return;
   const overlap = Math.max(-(w - 22), (avail - w) / (cards.length - 1) - w);

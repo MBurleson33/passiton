@@ -654,7 +654,9 @@ h1, h2, h3 { font-family: var(--font-head); font-weight: 400; letter-spacing: 0;
   #game-screen #action-lock-badge { grid-column: 2; grid-row: 2; justify-self: center; }
   #game-screen #free-play-badge { grid-column: 2; grid-row: 3; justify-self: center; }
   #game-screen .turn-panel { grid-column: 2; grid-row: 4; margin-top: 0; }
-  #game-screen .hand-footer { grid-column: 2; grid-row: 5; padding-top: 0; }
+  /* Your hand fills the rest of the right side; cards sit at the bottom */
+  #game-screen .hand-footer { grid-column: 2; grid-row: 5; padding-top: 0; align-self: stretch; display: flex; flex-direction: column; min-height: 0; }
+  #game-screen .hand-scroll { flex: 1; align-items: flex-end; padding-bottom: 16px; }
   .table-circle { width: min(92%, calc(100dvh - 90px)); max-height: 100%; }
   .hand-scroll { padding: 14px 10px 10px; }
 
@@ -710,8 +712,9 @@ h1, h2, h3 { font-family: var(--font-head); font-weight: 400; letter-spacing: 0;
   .my-gifts { padding: 0 4px 2px; }
   .gift-chip { font-size: 0.7rem; padding: 2px 8px; }
   .grace-btn { padding: 4px 10px; font-size: 0.74rem; }
-  #player-hand .card-medium { width: 92px; height: 128px; }
-  #player-hand .card { margin-left: -40px; }
+  /* Hand cards sized from the screen height — as big as the space allows */
+  #player-hand .card-medium { height: min(41dvh, 190px); width: auto; aspect-ratio: 88 / 123; }
+  #player-hand .card { margin-left: -48px; }
   #player-hand .card:first-child { margin-left: 0; }
   .ph-text { -webkit-line-clamp: 4; }
   .setup-wrap, .results-wrap { padding: 18px 26px; }
